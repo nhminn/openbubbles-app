@@ -100,7 +100,8 @@ class CupertinoConversationListState
                   style: context.theme.textTheme.titleLarge),
             )
           : null,
-      body: Obx(() => Stack(
+      body: Obx(() {
+        final content = Stack(
             children: [
               ScrollbarWrapper(
                 showScrollbar: true,
@@ -339,12 +340,10 @@ class CupertinoConversationListState
                                 final separator =
                                     Obx(() => !ss.settings.hideDividers.value
                                         ? Padding(
-                                            padding:
-                                                const EdgeInsets.only(left: 20),
+                                            padding: const EdgeInsets.only(
+                                                left: 78, right: 16),
                                             child: Divider(
-                                              color: context
-                                                  .theme.colorScheme.outline
-                                                  .withOpacity(0.5),
+                                              color: Ios27.hairline(context),
                                               thickness: 0.5,
                                               height: 0.5,
                                             ),
@@ -489,7 +488,13 @@ class CupertinoConversationListState
                   left: 0,
                 ),
             ],
-          )),
+          );
+        if (ss.settings.skin.value == Skins.iOS &&
+            ss.settings.windowEffect.value == WindowEffect.disabled) {
+          return Ios27Background(child: content);
+        }
+        return content;
+      }),
     );
   }
 }

@@ -60,10 +60,10 @@ class _CupertinoConversationTileState extends CustomState<CupertinoConversationT
             mouseCursor: MouseCursor.defer,
             enableFeedback: true,
             dense: ss.settings.denseChatTiles.value,
-            contentPadding: const EdgeInsets.only(left: 0),
+            contentPadding: const EdgeInsets.only(left: 16, right: 10),
             visualDensity: ss.settings.denseChatTiles.value ? VisualDensity.compact : null,
             minVerticalPadding: ss.settings.denseChatTiles.value ? 7.5 : 10,
-            horizontalTitleGap: 10,
+            horizontalTitleGap: 12,
             title: Row(
               children: [
                 Expanded(
@@ -147,7 +147,7 @@ class _CupertinoConversationTileState extends CustomState<CupertinoConversationT
                       ? context.theme.colorScheme.properSurface.withOpacity(0.5)
                       : null,
           borderRadius: BorderRadius.circular(
-              controller.shouldHighlight.value || controller.shouldPartialHighlight.value || controller.hoverHighlight.value ? 8 : 0),
+              controller.shouldHighlight.value || controller.shouldPartialHighlight.value || controller.hoverHighlight.value ? 18 : 0),
         ),
         child: ns.isAvatarOnly(context)
             ? InkWell(

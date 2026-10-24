@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/header/header_widgets.dart';
@@ -32,26 +30,22 @@ class CupertinoHeader extends StatelessWidget {
         child: Container(
           margin: EdgeInsets.only(
             top: topMargin,
-            left: 20,
-            right: 20,
-            bottom: 5,
+            left: 16,
+            right: 16,
+            bottom: 6,
           ),
           child: Obx(() {
             ns.listener.value;
             return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: ns.isAvatarOnly(context) ? MainAxisAlignment.center : MainAxisAlignment.spaceBetween,
               children: <Widget>[
                 if (!ns.isAvatarOnly(context))
                   Expanded(
-                    child: HeaderText(controller: controller),
+                    child: HeaderText(controller: controller, fontSize: 34),
                   ),
                 if (ns.isAvatarOnly(context))
-                  Material(
-                    color: Colors.transparent,
-                    shape: const CircleBorder(),
-                    clipBehavior: Clip.antiAlias,
-                    child: OverflowMenu(extraItems: true, controller: controller),
-                  ),
+                  OverflowMenu(extraItems: true, controller: controller),
                 if (!ns.isAvatarOnly(context))
                   Row(
                     mainAxisSize: MainAxisSize.max,
@@ -59,76 +53,49 @@ class CupertinoHeader extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       SyncIndicator(size: 16),
-                      const SizedBox(width: 10.0),
-                      ClipOval(
-                        child: Material(
-                          color: context.theme.colorScheme.properSurface, // button color
-                          child: SizedBox(
-                            width: 30,
-                            height: 30,
-                            child: InkWell(
-                              child: Icon(CupertinoIcons.search, color: context.theme.colorScheme.properOnSurface, size: 18),
-                              onTap: () {
-                                ns.pushLeft(context, SearchView());
-                              },
-                            ),
-                          ),
-                        ),
+                      const SizedBox(width: 8.0),
+                      Ios27GlassButton(
+                        size: 38,
+                        tooltip: "Search",
+                        onTap: () => ns.pushLeft(context, SearchView()),
+                        child: Icon(CupertinoIcons.search, color: Ios27.primaryText(context), size: 18),
                       ),
-                      const SizedBox(width: 10.0),
+                      const SizedBox(width: 8.0),
                       if (ss.settings.moveChatCreatorToHeader.value)
-                        ClipOval(
-                          child: Material(
-                            color: context.theme.colorScheme.properSurface, // button color
-                            child: CallbackShortcuts(
-                              bindings: {
-                                const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
-                                  if (!FocusScope.of(context).focusInDirection(TraversalDirection.left)) {
-                                    FocusScope.of(context).previousFocus();
-                                  }
-                                },
-                                const SingleActivator(LogicalKeyboardKey.enter): () => controller.openNewChatCreator(context),
-                                const SingleActivator(LogicalKeyboardKey.select): () => controller.openNewChatCreator(context),
-                                const SingleActivator(LogicalKeyboardKey.space): () => controller.openNewChatCreator(context),
-                              },
-                              child: InkWell(
-                                focusNode: controller.newMessageFocusNode,
-                                child: SizedBox(
-                                  width: 30,
-                                  height: 30,
-                                  child: Icon(
-                                    CupertinoIcons.pencil,
-                                    color: context.theme.colorScheme.properOnSurface,
-                                    size: 20,
-                                  ),
-                                ),
-                                onTap: () => controller.openNewChatCreator(context),
-                              ),
+                        CallbackShortcuts(
+                          bindings: {
+                            const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+                              if (!FocusScope.of(context).focusInDirection(TraversalDirection.left)) {
+                                FocusScope.of(context).previousFocus();
+                              }
+                            },
+                            const SingleActivator(LogicalKeyboardKey.enter): () => controller.openNewChatCreator(context),
+                            const SingleActivator(LogicalKeyboardKey.select): () => controller.openNewChatCreator(context),
+                            const SingleActivator(LogicalKeyboardKey.space): () => controller.openNewChatCreator(context),
+                          },
+                          child: Ios27GlassButton(
+                            size: 38,
+                            tooltip: "New Message",
+                            focusNode: controller.newMessageFocusNode,
+                            onTap: () => controller.openNewChatCreator(context),
+                            child: Icon(
+                              CupertinoIcons.pencil,
+                              color: Ios27.primaryText(context),
+                              size: 19,
                             ),
                           ),
                         ),
+                      if (ss.settings.moveChatCreatorToHeader.value) const SizedBox(width: 8.0),
                       if (ss.settings.moveChatCreatorToHeader.value && ss.settings.cameraFAB.value && !kIsWeb && !kIsDesktop)
-                        const SizedBox(width: 10.0),
-                      if (ss.settings.moveChatCreatorToHeader.value && ss.settings.cameraFAB.value && !kIsWeb && !kIsDesktop)
-                        ClipOval(
-                          child: Material(
-                            color: context.theme.colorScheme.properSurface, // button color
-                            child: InkWell(
-                                child: SizedBox(
-                                  width: 30,
-                                  height: 30,
-                                  child: Icon(CupertinoIcons.camera, color: context.theme.colorScheme.properOnSurface, size: 20),
-                                ),
-                                onTap: () => controller.openCamera(context)),
-                          ),
+                        Ios27GlassButton(
+                          size: 38,
+                          tooltip: "Camera",
+                          onTap: () => controller.openCamera(context),
+                          child: Icon(CupertinoIcons.camera, color: Ios27.primaryText(context), size: 19),
                         ),
-                      if (ss.settings.moveChatCreatorToHeader.value) const SizedBox(width: 10.0),
-                      const Material(
-                        color: Colors.transparent,
-                        shape: CircleBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: OverflowMenu(),
-                      ),
+                      if (ss.settings.moveChatCreatorToHeader.value && ss.settings.cameraFAB.value && !kIsWeb && !kIsDesktop)
+                        const SizedBox(width: 8.0),
+                      OverflowMenu(),
                     ],
                   ),
               ],
@@ -157,31 +124,32 @@ class CupertinoMiniHeader extends StatelessWidget {
       child: FadeOnScroll(
         scrollController: controller.iosScrollController,
         fullOpacityOffset: topMargin + 15,
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Obx(() {
-              ns.listener.value;
-              return Container(
-                width: ns.width(context),
-                height: (topMargin - 20).clamp(kIsDesktop ? 65 : 40, double.infinity),
-                color: context.theme.colorScheme.properSurface.withOpacity(0.5),
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: kIsDesktop ? 10 : 5),
-                  child: Text(
-                    controller.showArchivedChats
-                        ? "Archive"
-                        : controller.showUnknownSenders
-                        ? "Unknown Senders"
-                        : "Messages",
-                    style: context.textTheme.titleMedium!.copyWith(color: context.theme.colorScheme.properOnSurface),
+        child: Obx(() {
+          ns.listener.value;
+          return Container(
+            width: ns.width(context),
+            height: (topMargin - 20).clamp(kIsDesktop ? 65 : 40, double.infinity),
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: kIsDesktop ? 10 : 5),
+              child: Ios27GlassPill(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                child: Text(
+                  controller.showArchivedChats
+                      ? "Archive"
+                      : controller.showUnknownSenders
+                      ? "Unknown Senders"
+                      : "Messages",
+                  style: context.textTheme.titleSmall!.copyWith(
+                    color: Ios27.primaryText(context),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
                   ),
                 ),
-              );
-            })
-          ),
-        ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }

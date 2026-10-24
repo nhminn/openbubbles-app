@@ -79,6 +79,12 @@ class _TextBubbleState extends CustomState<TextBubble, void, MessageWidgetContro
   List<Color> getBubbleColors() {
     if (selected && !iOS) return [context.theme.colorScheme.tertiaryContainer, context.theme.colorScheme.tertiaryContainer];
     List<Color> bubbleColors = [context.theme.colorScheme.properSurface, context.theme.colorScheme.properSurface];
+    if (!ss.settings.colorfulBubbles.value && ss.settings.skin.value == Skins.iOS) {
+      // Diffused glass received bubbles over the iOS 27 wallpaper.
+      bubbleColors = Ios27.isDark(context)
+          ? [Colors.white.withOpacity(0.13), Colors.white.withOpacity(0.08)]
+          : [Colors.white.withOpacity(0.82), Colors.white.withOpacity(0.64)];
+    }
     if (ss.settings.colorfulBubbles.value && !message.isFromMe!) {
       if (message.handle?.color == null) {
         bubbleColors = toColorGradient(message.handle?.address);
@@ -121,14 +127,25 @@ class _TextBubbleState extends CustomState<TextBubble, void, MessageWidgetContro
             left: message.dateScheduled != null && message.isBigEmoji ? -8 : message.isFromMe! || message.isBigEmoji ? 0 : 10,
             right: message.isFromMe! && (!message.isBigEmoji) ? 10 : 0
           )),
-        color: message.isFromMe! && !message.isBigEmoji && message.dateScheduled == null
-            ? (selected ? context.theme.colorScheme.tertiaryContainer : context.theme.colorScheme.primary)
-            : null,
-        decoration: message.isFromMe! || message.isBigEmoji ? null : BoxDecoration(
+        color: null,
+        decoration: message.isBigEmoji || (message.isFromMe! && message.dateScheduled != null)
+            ? null
+            : BoxDecoration(
           gradient: LinearGradient(
-            begin: AlignmentDirectional.bottomCenter,
-            end: AlignmentDirectional.topCenter,
-            colors: getBubbleColors().map((c) => c.withOpacity(translucentMode ? 0.7 : 1)).toList(),
+            begin: AlignmentDirectional.topStart,
+            end: AlignmentDirectional.bottomEnd,
+            colors: message.isFromMe!
+                ? [
+                    selected ? context.theme.colorScheme.tertiaryContainer : context.theme.colorScheme.primary,
+                    (selected ? context.theme.colorScheme.tertiaryContainer : context.theme.colorScheme.primary).darkenAmount(0.07),
+                  ]
+                : getBubbleColors().map((c) => c.withOpacity(translucentMode ? 0.72 : 0.98)).toList(),
+          ),
+          border: Border.all(
+            color: message.isFromMe!
+                ? Colors.white.withOpacity(0.16)
+                : Ios27.hairline(context),
+            width: 0.5,
           ),
         ),
         // alignment: Alignment.center,

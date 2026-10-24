@@ -75,9 +75,9 @@ class CupertinoHeader extends StatelessWidget implements PreferredSizeWidget {
                 children: [
               Expanded(child: Container(
                 decoration: BoxDecoration(
-                  color: context.theme.colorScheme.properSurface.withOpacity(0.7),
+                  color: context.theme.colorScheme.properSurface.withOpacity(0.55),
                   border: Border(
-                    bottom: BorderSide(color: context.theme.colorScheme.properSurface.darkenAmount(0.25), width: 0.5),
+                    bottom: BorderSide(color: Ios27.hairline(context), width: 0.5),
                   ),
                 ),
                 child: Material(
@@ -105,15 +105,16 @@ class CupertinoHeader extends StatelessWidget implements PreferredSizeWidget {
                                   const SingleActivator(LogicalKeyboardKey.select): goBack,
                                   const SingleActivator(LogicalKeyboardKey.space): goBack,
                                 },
-                                child: InkWell(
-                                  focusNode: controller.headerBackFocusNode,
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () {
-                                    if (kIsDesktop) return;
-                                    goBack();
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(3.0),
+                                child: Ios27Glass(
+                                  borderRadius: 19,
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                  child: InkWell(
+                                    focusNode: controller.headerBackFocusNode,
+                                    customBorder: const StadiumBorder(),
+                                    onTap: () {
+                                      if (kIsDesktop) return;
+                                      goBack();
+                                    },
                                     child: _UnreadIcon(controller: controller),
                                   ),
                                 ),
@@ -135,20 +136,21 @@ class CupertinoHeader extends StatelessWidget implements PreferredSizeWidget {
                                     ),
                                   );
                                 },
-                          child: InkWell(
-                            onTap: () {
-                              if (kIsDesktop) return;
-                              Navigator.of(context).push(
-                                ThemeSwitcher.buildPageRoute(
-                                  builder: (context) => ConversationDetails(
-                                    chat: controller.chat,
+                          child: Ios27Glass(
+                            borderRadius: 22,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            child: InkWell(
+                              onTap: () {
+                                if (kIsDesktop) return;
+                                Navigator.of(context).push(
+                                  ThemeSwitcher.buildPageRoute(
+                                    builder: (context) => ConversationDetails(
+                                      chat: controller.chat,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                            borderRadius: BorderRadius.circular(10),
-                            child: Padding(
-                              padding: const EdgeInsets.all(3.0),
+                                );
+                              },
+                              customBorder: const StadiumBorder(),
                               child: _ChatIconAndTitle(parentController: controller),
                             ),
                           ),
@@ -156,19 +158,25 @@ class CupertinoHeader extends StatelessWidget implements PreferredSizeWidget {
                       ),
                       Padding(
                           padding: const EdgeInsets.only(top: 5),
-                          child: Align(alignment: Alignment.topRight, child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              FaceTimeBtn(controller: controller),
-                              ManualMark(controller: controller),
-                            ],
+                          child: Align(alignment: Alignment.topRight, child: Ios27Glass(
+                            borderRadius: 20,
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                FaceTimeBtn(controller: controller),
+                                ManualMark(controller: controller),
+                              ],
+                            ),
                           ))),
                     ]),
                   ),
                 ),
               ),),  
                   Obx(() => controller.suggestedContact.value != null ? 
-                    Container(
+                    Ios27Glass(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      borderRadius: 20,
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
@@ -270,7 +278,9 @@ class CupertinoHeader extends StatelessWidget implements PreferredSizeWidget {
                       ),
                     ) : const SizedBox.shrink()),
                     Obx(() => controller.suggestedContact.value == null && controller.suggestShare.value ? 
-                    Container(
+                    Ios27Glass(
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      borderRadius: 20,
                       padding: const EdgeInsets.all(12),
                       child: Row(
                         children: [
@@ -401,8 +411,8 @@ class _UnreadIconState extends OptimizedState<_UnreadIcon> {
               style: TextStyle(
                 fontFamily: icon.fontFamily,
                 package: icon.fontPackage,
-                fontSize: 36,
-                color: context.theme.colorScheme.primary,
+                fontSize: 24,
+                color: Ios27.primaryText(context),
               ),
             );
           }),
@@ -414,12 +424,12 @@ class _UnreadIconState extends OptimizedState<_UnreadIcon> {
           return Padding(
               padding: const EdgeInsets.only(top: 3),
               child: Container(
-                  height: 25.0,
-                  width: 25.0,
-                  constraints: const BoxConstraints(minWidth: 20),
+                  height: 18.0,
+                  width: 18.0,
+                  constraints: const BoxConstraints(minWidth: 18),
                   decoration: BoxDecoration(
                     color: context.theme.colorScheme.primary,
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
                   child: Padding(
@@ -428,9 +438,7 @@ class _UnreadIconState extends OptimizedState<_UnreadIcon> {
                       _count.toString(),
                       style: context.textTheme.bodyMedium!.copyWith(
                           color: context.theme.colorScheme.onPrimary,
-                          fontSize: _count > 99
-                              ? context.textTheme.bodyMedium!.fontSize! - 1.0
-                              : context.textTheme.bodyMedium!.fontSize),
+                          fontSize: 11),
                     ),
                   )));
         }),
@@ -540,7 +548,7 @@ class _ChatIconAndTitleState extends CustomState<_ChatIconAndTitle, void, Conver
         ignoring: true,
         child: ContactAvatarGroupWidget(
           chat: controller.chat,
-          size: 54,
+          size: 36,
         ),
       ),
       const SizedBox(height: 5, width: 5),
@@ -554,10 +562,16 @@ class _ChatIconAndTitleState extends CustomState<_ChatIconAndTitle, void, Conver
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             text: TextSpan(
-              style: context.theme.textTheme.bodyMedium,
+              style: context.theme.textTheme.bodyMedium!.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Ios27.primaryText(context),
+              ),
               children: MessageHelper.buildEmojiText(
                 _title,
-                context.theme.textTheme.bodyMedium!,
+                context.theme.textTheme.bodyMedium!.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Ios27.primaryText(context),
+                ),
               ),
             ),
           ),
@@ -565,7 +579,7 @@ class _ChatIconAndTitleState extends CustomState<_ChatIconAndTitle, void, Conver
         Icon(
           CupertinoIcons.chevron_right,
           size: context.theme.textTheme.bodyMedium!.fontSize!,
-          color: context.theme.colorScheme.outline,
+          color: Ios27.secondaryText(context),
         ),
       ]),
     ];

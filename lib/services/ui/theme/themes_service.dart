@@ -37,7 +37,7 @@ class ThemesService extends GetxService {
   final oledDarkTheme = FlexColorScheme(
     textTheme: Typography.englishLike2021.merge(Typography.whiteMountainView),
     colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.blue,
+      seedColor: HexColor("0A84FF"),
       background: Colors.black,
       error: Colors.red,
       brightness: Brightness.dark,
@@ -45,7 +45,7 @@ class ThemesService extends GetxService {
     useMaterial3: true,
   ).toTheme.copyWith(splashFactory: InkSparkle.splashFactory, extensions: [
     BubbleColors(
-      iMessageBubbleColor: HexColor("1982FC"),
+      iMessageBubbleColor: HexColor("0A84FF"),
       oniMessageBubbleColor: Colors.white,
       smsBubbleColor: HexColor("43CC47"),
       onSmsBubbleColor: Colors.white,
@@ -87,16 +87,16 @@ class ThemesService extends GetxService {
   final whiteLightTheme = FlexColorScheme(
     textTheme: Typography.englishLike2021.merge(Typography.blackMountainView),
     colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.blue,
-      background: Colors.white,
-      surfaceVariant: HexColor('F3F3F6'),
+      seedColor: HexColor("0A84FF"),
+      background: HexColor("F6F7FB"),
+      surfaceVariant: HexColor('F1F2F7'),
       error: Colors.red,
       brightness: Brightness.light,
     ),
     useMaterial3: true,
   ).toTheme.copyWith(splashFactory: InkSparkle.splashFactory, extensions: [
     BubbleColors(
-      iMessageBubbleColor: HexColor("1982FC"),
+      iMessageBubbleColor: HexColor("0A84FF"),
       oniMessageBubbleColor: Colors.white,
       smsBubbleColor: HexColor("43CC47"),
       onSmsBubbleColor: Colors.white,

@@ -36,6 +36,9 @@ class _GradientBackgroundState extends CustomState<GradientBackground, void, Con
   @override
   Widget build(BuildContext context) {
     if (!adjustBackground.value) {
+      if (ss.settings.skin.value == Skins.iOS && controller.backgroundPoster.value == null) {
+        return Ios27Background(child: widget.child);
+      }
       return widget.child;
     }
     return MirrorAnimationBuilder<Movie>(

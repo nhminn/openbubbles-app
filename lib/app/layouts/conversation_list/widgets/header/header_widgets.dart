@@ -364,25 +364,19 @@ class CupertinoOverflowMenu extends StatelessWidget {
             onTap: () => logout(context),
           ),
       ],
-      buttonBuilder: (context, showMenu) => GestureDetector(
-        onTap: showMenu,
-        child: ThemeSwitcher(
-            iOSSkin: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(40),
-                color: context.theme.colorScheme.properSurface,
-              ),
-              child: Icon(
-                Icons.more_horiz,
-                color: context.theme.colorScheme.properOnSurface,
-                size: 20,
-              ),
+      buttonBuilder: (context, showMenu) => ThemeSwitcher(
+          iOSSkin: Ios27GlassButton(
+            size: 38,
+            tooltip: "More",
+            onTap: showMenu,
+            child: Icon(
+              Icons.more_horiz,
+              color: Ios27.primaryText(context),
+              size: 20,
             ),
-            materialSkin: const SizedBox.shrink(),
-            samsungSkin: const SizedBox.shrink()
-          )
+          ),
+          materialSkin: const SizedBox.shrink(),
+          samsungSkin: const SizedBox.shrink()
       ),
     );
   }

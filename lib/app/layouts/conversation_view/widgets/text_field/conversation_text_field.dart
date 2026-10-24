@@ -402,9 +402,13 @@ class ConversationTextFieldState extends CustomState<ConversationTextField, void
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-            padding: const EdgeInsets.only(bottom: 10.0, top: 10.0),
-            child: 
-            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            padding: const EdgeInsets.only(bottom: 10.0, top: 8.0, left: 12.0, right: 12.0),
+            child:
+            Ios27Glass(
+              borderRadius: 28,
+              blur: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               IconButton(
                 icon: Icon(
                   iOS
@@ -618,7 +622,7 @@ class ConversationTextFieldState extends CustomState<ConversationTextField, void
                     sendMessage: sendMessage,
                   ),
                 ),
-            ])),
+            ]))),
             AnimatedSize(
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeIn,
@@ -860,11 +864,16 @@ class TextFieldComponentState extends State<TextFieldComponent> {
         return Container(
           decoration: iOS
               ? BoxDecoration(
+                  color: controller != null
+                      ? Colors.white.withOpacity(Ios27.isDark(context) ? 0.06 : 0.28)
+                      : null,
                   border: Border.fromBorderSide(BorderSide(
-                    color: (isRecording & iOS) ? context.theme.colorScheme.primary.withOpacity(1.0) : context.theme.colorScheme.properSurface,
-                    width: 1.5,
+                    color: (isRecording & iOS)
+                        ? context.theme.colorScheme.primary.withOpacity(1.0)
+                        : (controller != null ? Ios27.hairline(context) : context.theme.colorScheme.properSurface),
+                    width: 1.0,
                   )),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(24),
                 )
               : BoxDecoration(
                   color: context.theme.colorScheme.properSurface,
