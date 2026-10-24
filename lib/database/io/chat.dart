@@ -893,6 +893,12 @@ class Chat {
   }
 
   bool applyFromCloud(api.CloudChat c, String record) {
+    // Same record and group version already applied: nothing changed, so avoid
+    // rewriting the row and firing chat-list observers on every sync pass.
+    if (ckRecordId == record && c.properties?.pv == (groupVersion ?? 1)) {
+      return false;
+    }
+
     chatIdentifier = c.chatIdentifier;
     ckRecordId = record;
     cloudGuid = c.groupId;

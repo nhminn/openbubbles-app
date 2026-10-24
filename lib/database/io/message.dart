@@ -1097,7 +1097,10 @@ class Message {
     );
   }
 
-  void applyFromCloud(api.CloudMessage c, String cloudkitId) {
+  bool applyFromCloud(api.CloudMessage c, String cloudkitId) {
+    // Same CloudKit record already applied; skip re-decoding and re-saving it.
+    // Message records are immutable, so the ID is a safe change marker.
+    if (ckRecordId == cloudkitId) return false;
     Logger.info("item ${c.chatId}");
     Chat? chat;
     if (c.chatId.contains(";")) {
@@ -1112,7 +1115,7 @@ class Message {
       chat ??= Chat.findByRustGuid(c.chatId);
     }
 
-    if (chat?.isRpSms ?? true) return;
+    if (chat?.isRpSms ?? true) return false;
 
     Logger.info("Syncing new message");
 
@@ -1185,6 +1188,7 @@ class Message {
     }
     
     save(chat: chat);
+    return true;
   }
 
   /// Fetch reactions

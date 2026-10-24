@@ -2170,6 +2170,9 @@ class RustPushService extends GetxService {
       chats.restoring = true;
       try {
         await pushService.doCloudKitSyncPrivate();
+      } catch (e) {
+        Logger.error("CloudKit sync failed", error: e);
+        showSnackbar("Sync Failed", e.toString());
       } finally {
         pushService.isSyncing.value = null;
         chats.restoring = false;
@@ -2326,6 +2329,35 @@ class RustPushService extends GetxService {
   }
 
   Future<void> doCloudKitSyncPrivate() async {
+    try {
+      await _doCloudKitSyncPrivateOnce();
+    } catch (e) {
+      if (!_isCloudKitTokenResetError(e)) rethrow;
+      // CloudKit invalidated our change tokens (usually "Zone was purged by
+      // user"). A stale token makes every sync attempt fail until it is
+      // cleared, so drop the tokens and do one full pass instead of leaving
+      // Messages in iCloud permanently broken.
+      Logger.warn("CloudKit sync token was invalidated, retrying full sync: $e");
+      _clearCloudKitSyncTokens();
+      await _doCloudKitSyncPrivateOnce();
+    }
+  }
+
+  static bool _isCloudKitTokenResetError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains("zone was purged") ||
+        message.contains("zone purge") ||
+        message.contains("change token") ||
+        message.contains("sync continuation token");
+  }
+
+  void _clearCloudKitSyncTokens() {
+    ss.prefs.remove("chatSyncToken");
+    ss.prefs.remove("messageSyncToken");
+    ss.prefs.remove("attachmentSyncToken");
+  }
+
+  Future<void> _doCloudKitSyncPrivateOnce() async {
     isSyncing.value = "Syncing Now...";
 
     var isInClique = await api.isInClique(keychain: pushService.state!.icloudServices!.keychain!);
@@ -2453,6 +2485,11 @@ class RustPushService extends GetxService {
 
           var existing = Attachment.findOne(convertAttachmentGuid(decoded.guid));
           if (existing != null) {
+            if (existing.ckRecordId == item.key) {
+              // Already applied this record; saving it again would fire
+              // ObjectBox observers for every attachment on every sync pass.
+              continue;
+            }
             if (existing.ckRecordId != null && existing.ckRecordId != item.key) {
               // we have a different record id
               dupDeleteAttachments.add(existing.ckRecordId!);
@@ -2529,7 +2566,11 @@ class RustPushService extends GetxService {
           var existing = Message.findOne(guid: item.value!.guid);
           if (existing != null) {
             if (existing.ckRecordId == item.key) {
+              // Already applied this record. Message records are immutable, so
+              // there is nothing new to write; skipping the save keeps the sync
+              // loop from re-firing reactive observers forever (issue #273).
               localUnchanged++;
+              continue;
             } else if (existing.ckRecordId != null) {
               // we have a different record id
               dupDeleteMessages.add(existing.ckRecordId!);

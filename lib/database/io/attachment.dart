@@ -54,7 +54,10 @@ class Attachment {
   set dbMetadata(String? json) => metadata = json == null
       ? null : jsonDecode(json) as Map<String, dynamic>;
   
-  void applyFromCloud(api.CloudAttachment c, String ckRecordId) {
+  bool applyFromCloud(api.CloudAttachment c, String ckRecordId) {
+    // Already applied this exact CloudKit record. Re-applying it rewrites the
+    // row and re-fires reactive observers for no reason (see OpenBubbles#273).
+    if (this.ckRecordId == ckRecordId) return false;
     this.ckRecordId = ckRecordId;
     var decoded = api.decodeAttachmentmeta(wrapped: c.cm);
     uti = decoded.uti;
@@ -74,6 +77,7 @@ class Attachment {
       guid = decoded.guid;
       save(null);
     }
+    return true;
   }
 
   String unconvertAttachmentGuid(String guid) {
