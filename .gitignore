@@ -41,12 +41,10 @@ pubspeck.lock
 **/releases
 
 #objectbox
-.dart_tool/*
-!.dart_tool/build
-.dart_tool/build/entrypoint
-.dart_tool/build/*/error_cache/**
-.dart_tool/build/generated
-!.dart_tool/build/generated/*/*.info
+.dart_tool/
+
+#codegen
+codegen_logs
 
 #private keys
 *.env
