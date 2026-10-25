@@ -73,7 +73,9 @@ jobs:
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null
+          # `yes` can exit with SIGPIPE once sdkmanager has read enough input;
+          # that must not fail the job.
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
