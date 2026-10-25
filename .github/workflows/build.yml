@@ -1,11 +1,31 @@
-on: [ push, pull_request ]
-name: Build
+name: Android Build
+
+on:
+  push:
+    branches: [rustpush]
+  pull_request:
+    branches: [rustpush]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: "true"
+  RUST_BACKTRACE: "1"
+
 jobs:
   build:
     name: OpenBubbles APK
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+
     steps:
-      - name: Free Disk Space (Ubuntu)
+      - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -15,35 +35,63 @@ jobs:
           large-packages: true
           swap-storage: true
 
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          fetch-depth: 1
+
+      # The app, rustpush, and rustpush's nested submodules contain a mix of
+      # HTTPS and SSH URLs. Rewrite SSH to HTTPS before updating recursively so
+      # a fresh CI checkout never needs an SSH key.
+      - name: Check out submodules over HTTPS
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          targets: aarch64-linux-android
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
           flutter-version: 3.24.0
+          cache: true
 
       - name: Set up Java
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
-      
-      - name: Setup Android SDK
-        uses: amyu/setup-android@v5
+          distribution: temurin
+          java-version: "21"
 
-      - name: Install Protobuf compiler
-        run: sudo apt-get install -y protobuf-compiler
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;23.1.7779620"
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
+          protoc --version
+
+      # These are the same throwaway Fairplay certificates the upstream build
+      # uses. They are only needed to make the Rust build script happy.
       - name: Set up fake Fairplay keys
         run: |
+          set -euo pipefail
           mkdir -p rustpush/certs/fairplay
 
           cert_names=(
@@ -60,16 +108,54 @@ jobs:
           )
 
           for name in "${cert_names[@]}"; do
-              cp rustpush/certs/legacy-fairplay/fairplay.pem rustpush/certs/fairplay/$name.pem
-              cp rustpush/certs/legacy-fairplay/fairplay.crt rustpush/certs/fairplay/$name.crt
+            cp rustpush/certs/legacy-fairplay/fairplay.pem "rustpush/certs/fairplay/$name.pem"
+            cp rustpush/certs/legacy-fairplay/fairplay.crt "rustpush/certs/fairplay/$name.crt"
           done
 
-      # First run is expected to fail until ffmpeg_kit_flutter_new is fixed.
-      - name: Run Build Script
+      - name: Resolve Flutter dependencies
+        run: flutter --no-version-check pub get
+
+      - name: Run UI smoke test
+        run: flutter --no-version-check test test/ios27_helpers_test.dart
+
+      - name: Build alpha debug APK
         run: |
-          flutter build apk --flavor alpha --debug --target-platform android-arm64
-      
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          flutter --no-version-check build apk \
+            --flavor alpha \
+            --debug \
+            --target-platform android-arm64
+
+      # A green Gradle build can still produce an APK that installs and then
+      # crashes during plugin registration if CargoKit skipped a native
+      # library. Fail the job before uploading in that case.
+      - name: Verify APK contents
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-alpha-debug.apk
+          test -f "$apk"
+
+          unzip -l "$apk" > /tmp/apk-contents.txt
+
+          for entry in \
+            lib/arm64-v8a/libflutter.so \
+            lib/arm64-v8a/librust_lib_bluebubbles.so \
+            lib/arm64-v8a/libirondash_engine_context_native.so \
+            lib/arm64-v8a/libsuper_native_extensions.so \
+            lib/arm64-v8a/libffmpegkit.so; do
+            if ! grep -Fq "$entry" /tmp/apk-contents.txt; then
+              echo "APK is missing $entry" >&2
+              grep 'lib/arm64-v8a/' /tmp/apk-contents.txt >&2 || true
+              exit 1
+            fi
+          done
+
+          ls -lh "$apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: Alpha Debug APK
+          name: openbubbles-alpha-debug-arm64
           path: build/app/outputs/flutter-apk/app-alpha-debug.apk
+          if-no-files-found: error
+          retention-days: 14

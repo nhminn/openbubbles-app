@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   desktop_webview_auth
   dynamic_color
   emoji_picker_flutter
+  ffmpeg_kit_flutter_new
   file_selector_windows
   flutter_acrylic
   flutter_inappwebview_windows
