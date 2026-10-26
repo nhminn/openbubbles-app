@@ -40,7 +40,7 @@ jobs:
           docker-images: true
 
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
@@ -131,6 +131,8 @@ jobs:
         run: flutter --no-version-check test test/ios27_helpers_test.dart
 
       - name: Build alpha debug APK
+        env:
+          CI_ARM64_ONLY: "true"
         run: |
           set -euo pipefail
           flutter --no-version-check build apk \
@@ -165,7 +167,7 @@ jobs:
           ls -lh "$apk"
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: openbubbles-alpha-debug-arm64
           path: build/app/outputs/flutter-apk/app-alpha-debug.apk
