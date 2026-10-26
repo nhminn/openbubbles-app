@@ -17,6 +17,11 @@ concurrency:
 env:
   FLUTTER_SUPPRESS_ANALYTICS: "true"
   RUST_BACKTRACE: "1"
+  # The runner image's /usr/local/lib/android is deleted by the disk-space
+  # action and cannot be recreated by the unprivileged runner user. Install a
+  # fresh SDK inside the writable workspace instead.
+  ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+  ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
 
 jobs:
   build:
@@ -61,13 +66,15 @@ jobs:
           cache: true
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
