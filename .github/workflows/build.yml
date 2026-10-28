@@ -59,6 +59,16 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      # CargoKit builds the Rust library into rust_builder/android/build/build,
+      # not rust/target, so cache that directory explicitly. The rolling cache
+      # key lets later runs reuse the previous compilation.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust -> target"
+          cache-directories: "rust_builder/android/build/build"
+          cache-on-failure: true
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -70,6 +80,16 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -130,14 +150,18 @@ jobs:
       - name: Run UI smoke test
         run: flutter --no-version-check test test/ios27_helpers_test.dart
 
-      - name: Build alpha debug APK
+      # A release APK replaces the ~180 MB debug Dart kernel with AOT code and
+      # builds Rust for one ABI instead of three, which makes the download much
+      # smaller and the build faster. CI has no key.properties, so the alpha
+      # flavor falls back to debug signing in android/app/build.gradle.
+      - name: Build alpha release APK
         env:
           CI_ARM64_ONLY: "true"
         run: |
           set -euo pipefail
           flutter --no-version-check build apk \
             --flavor alpha \
-            --debug \
+            --release \
             --target-platform android-arm64
 
       # A green Gradle build can still produce an APK that installs and then
@@ -146,7 +170,7 @@ jobs:
       - name: Verify APK contents
         run: |
           set -euo pipefail
-          apk=build/app/outputs/flutter-apk/app-alpha-debug.apk
+          apk=build/app/outputs/flutter-apk/app-alpha-release.apk
           test -f "$apk"
 
           unzip -l "$apk" > /tmp/apk-contents.txt
@@ -169,7 +193,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
-          name: openbubbles-alpha-debug-arm64
-          path: build/app/outputs/flutter-apk/app-alpha-debug.apk
+          name: openbubbles-alpha-release-arm64
+          path: build/app/outputs/flutter-apk/app-alpha-release.apk
           if-no-files-found: error
           retention-days: 14

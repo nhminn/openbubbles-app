@@ -128,10 +128,11 @@ android {
         release {
             productFlavors.joel.signingConfig signingConfigs.debug
             productFlavors.tanay.signingConfig signingConfigs.debug
-            productFlavors.alpha.signingConfig signingConfigs.debug
+            // CI builds the alpha flavor without key.properties; fall back to
+            // the debug key so release APKs can still be produced and tested.
+            productFlavors.alpha.signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
             productFlavors.beta.signingConfig signingConfigs.release
             productFlavors.prod.signingConfig signingConfigs.release
-            productFlavors.alpha.signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
         }
