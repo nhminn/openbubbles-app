@@ -1,0 +1,128 @@
+package dev.fenn.imessage.registration
+
+/**
+ * NAC validation stamp assembly (ValidationCtx::sign / ValidationCtx::key_establishment,
+ * open_absinthe::nac, librust_lib_bluebubbles): the deku wire layouts of ValidationBody /
+ * ValidationData and the EstablishResponse parse, transcribed from the byte-exact models
+ * (nac_mint.py + NAC-NOTES.md). sig16 is computed internally via [NacSign] (SignState::sign).
+ */
+internal object NacValidation {
+
+    /**
+     * validation_body_to_bits: tag 0x05 | u32be(1) | u32be(0x180) | scrambled(384) |
+     * u64be(0x4f) | cert(79) = 480 bytes.
+     */
+    private fun bodyToBits(scrambled: ByteArray, cert: ByteArray): ByteArray {
+        require(scrambled.size == 0x180) { "body: scrambled must be 0x180 bytes" }
+        require(cert.size == 0x4f) { "body: cert chunk must be 0x4f bytes" }
+        val blob = ByteArray(480)
+        blob[0] = 0x05
+        putU32be(blob, 1, 1)
+        putU32be(blob, 5, 0x180)
+        scrambled.copyInto(blob, 9)
+        putU64be(blob, 9 + 0x180, 0x4f)
+        cert.copyInto(blob, 17 + 0x180)
+        return blob
+    }
+
+    /** validation_data_to_bits: tag 0x02 | rand(16) | sig(16) | u32be(len) | blob(480). */
+    private fun dataToBits(rand16: ByteArray, sig16: ByteArray, blob: ByteArray): ByteArray {
+        require(rand16.size == 16 && sig16.size == 16) { "data: rand/sig must be 16 bytes" }
+        val stamp = ByteArray(37 + blob.size)
+        stamp[0] = 0x02
+        rand16.copyInto(stamp, 1)
+        sig16.copyInto(stamp, 17)
+        putU32be(stamp, 33, blob.size)
+        blob.copyInto(stamp, 37)
+        return stamp
+    }
+
+    /**
+     * ValidationCtx::sign: the full 517-byte validation stamp. body576 is ValidationCtx
+     * [0x40:0x280] (the sign() body input; wire-verified ×3 live); sig16 = SignState::sign(body576, rand16, blob480)
+     * with blob480 = the ValidationBody wire built here (NAC-NOTES.md; verified byte-exact,
+     * STAGE7-10-REPORT.md session 6).
+     */
+    internal fun mint(
+        cert79: ByteArray,
+        session250: ByteArray,
+        rngPad: ByteArray,
+        rand16: ByteArray,
+        body576: ByteArray,
+    ): ByteArray {
+        val scrambled = NacMerge.scrambleBody(session250, rngPad)
+        val blob = bodyToBits(scrambled, cert79)
+        val sig16 = NacSign.sign(body576, rand16, blob)
+        return dataToBits(rand16, sig16, blob)
+    }
+
+    /** Stamp assembly with the signature supplied (the blob-assembly step of the mint). */
+    internal fun mintWithSig(
+        cert79: ByteArray,
+        session250: ByteArray,
+        rngPad: ByteArray,
+        rand16: ByteArray,
+        sig16: ByteArray,
+    ): ByteArray {
+        val scrambled = NacMerge.scrambleBody(session250, rngPad)
+        return dataToBits(rand16, sig16, bodyToBits(scrambled, cert79))
+    }
+
+    /**
+     * ValidationCtx::key_establishment (0x1792fb0). EstablishResponse wire (698 B live,
+     * offsets confirmed against the captures): tag u8 | key16 @1 | u32be bodyLen @0x11 |
+     * body @0x15 (0x250 = 592 B live; decrypt_cbc consumes exactly bodyLen bytes) |
+     * trailing data Vec (85 B live, copied verbatim into the ctx — NOT unused: its first
+     * 0x4f bytes are the mint's cert79, wire-verified across three live runs). The iv and
+     * body are mapped through SKEY (0x2247f6), decrypted with the established round keys,
+     * and the plaintext is mapped through SDAT (0x2246f6). The plaintext (592 B live) is
+     * the EstablishKeyResponse wire: [2:2+0x240] = the payload that becomes the ctx
+     * body576 region ([0x40:0x280], wire-verified ×3 live); [0:2] = its header.
+     *
+     * The establish seed is NOT the OAEP'd pearKey16: ValidationCtx::new draws 16 fresh
+     * bytes (the same bytes that ride the request at plain32[5:21] — [NacRequestBlob]'s
+     * innerKey16), maps them through the S-BOX (0x2248f9) into ctx[0x30]
+     * (the 0x1794a29 loop → the 0x1794b16 store), and keys the reply under
+     * establish_key(ctx[0x30]) — create_rounds reads the 16 bytes at [0:16] of the key
+     * pointer (0x17b8ed4). The server recomputes the same value from the blob's field32.
+     * Watchpoint-proven 2026-10-17 (the ctx[0x30] write is a verbatim copy of new()'s
+     * value; SBOX(draw) == X byte-exact) and the reply decrypts to 0240 under
+     * establishKey(SBOX(draw)) on three fresh live establishments.
+     */
+    internal fun keyEstablishmentFull(sessionInfo: ByteArray, establishSeed16: ByteArray): Established {
+        require(establishSeed16.size == 16) { "key_establishment: establish seed must be 16 bytes" }
+        require(sessionInfo.size >= 21) { "key_establishment: truncated EstablishResponse" }
+        val key16 = sessionInfo.copyOfRange(1, 17)
+        val bodyLen = u32be(sessionInfo, 17)
+        require(sessionInfo.size >= 21 + bodyLen) { "key_establishment: body truncated" }
+        val sbox = PearTables.nacSbox
+        val x16 = ByteArray(16) { sbox[establishSeed16[it].toInt() and 0xff] }
+        val rk = PearAes.establishKey(x16)
+        val skey = PearTables.skey
+        val iv = ByteArray(16) { skey[key16[it].toInt() and 0xff] }
+        val ct = ByteArray(bodyLen) { skey[sessionInfo[21 + it].toInt() and 0xff] }
+        val pt = PearAes.decryptCbc(ct, iv, rk)
+        val sdat = PearTables.sdat
+        for (i in pt.indices) pt[i] = sdat[pt[i].toInt() and 0xff]
+        val trailing = sessionInfo.copyOfRange(21 + bodyLen, sessionInfo.size)
+        return Established(pt, trailing)
+    }
+
+    internal fun keyEstablishment(sessionInfo: ByteArray, establishSeed16: ByteArray): ByteArray =
+        keyEstablishmentFull(sessionInfo, establishSeed16).payload
+
+    private fun u32be(b: ByteArray, off: Int): Int =
+        ((b[off].toInt() and 0xff) shl 24) or ((b[off + 1].toInt() and 0xff) shl 16) or
+            ((b[off + 2].toInt() and 0xff) shl 8) or (b[off + 3].toInt() and 0xff)
+
+    private fun putU32be(b: ByteArray, off: Int, v: Int) {
+        b[off] = (v ushr 24).toByte()
+        b[off + 1] = (v ushr 16).toByte()
+        b[off + 2] = (v ushr 8).toByte()
+        b[off + 3] = v.toByte()
+    }
+
+    private fun putU64be(b: ByteArray, off: Int, v: Long) {
+        for (i in 0 until 8) b[off + i] = (v ushr (56 - 8 * i)).toByte()
+    }
+}

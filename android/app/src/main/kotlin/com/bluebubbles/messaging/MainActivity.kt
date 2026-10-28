@@ -17,6 +17,7 @@ import com.bluebubbles.messaging.services.extension.MessageViewHandle
 import com.bluebubbles.messaging.services.rustpush.APNService
 import com.bluebubbles.messaging.services.system.CreateDocumentHandler
 import com.bluebubbles.messaging.services.system.EnableBTHandler
+import com.bluebubbles.messaging.validation.ValidationPlugin
 import com.rmawatson.flutterisolate.FlutterIsolatePlugin
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -52,6 +53,8 @@ class MainActivity : FlutterFragmentActivity(), ComponentCallbacks2 {
             }
             MethodCallHandler().methodCallHandler(call, result, this)
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ValidationPlugin.CHANNEL)
+            .setMethodCallHandler(ValidationPlugin::handle)
         flutterEngine.platformViewsController.registry.registerViewFactory("extension-keyboard", KeyboardViewFactory())
         flutterEngine.platformViewsController.registry.registerViewFactory("extension-live", LiveExtensionFactory())
     }

@@ -1,0 +1,12 @@
+The Kotlin files in this directory are vendored from fenleon/open-madrid:
+
+  https://github.com/fenleon/open-madrid
+  registration/src/main/kotlin/dev/fenn/imessage/registration
+
+Copyright the open-madrid contributors.
+Licensed under the Apache License, Version 2.0 (see the repository root LICENSE).
+
+Only the byte-exact NAC validation-stamp mint and its table data are included.
+The upstream project documents these as verified against live Apple responses.
+Local changes: java.util.Base64 was replaced with an Android API 24 compatible
+decoder (NacBase64.kt), and the files are compiled as part of the app module.

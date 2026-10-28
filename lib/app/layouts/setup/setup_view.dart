@@ -23,6 +23,7 @@ import 'package:bluebubbles/app/layouts/setup/pages/welcome/welcome_page.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/main.dart';
 import 'package:bluebubbles/services/rustpush/rustpush_service.dart';
+import 'package:bluebubbles/services/rustpush/validation_data.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/src/rust/frb_generated.dart';
 import 'package:bluebubbles/src/rust/lib.dart';
@@ -196,6 +197,7 @@ class SetupViewController extends StatefulController {
     finish(true);
     updateConnectError('');
     try {
+      await ValidationDataService.ensure(config!);
       currentAppleUser = await api.doLogin(path: pushService.statePath, account: currentAppleAccount!, osConfig: config!, finish: updateFinish);
       ss.settings.userName.value = await api.getUserName(state: currentAppleAccount!);
       await doRegister();
@@ -299,6 +301,7 @@ class SetupViewController extends StatefulController {
       );
       currentAppleAccount?.dispose();
       currentAppleAccount = account;
+      await ValidationDataService.ensure(config!);
       currentAppleUser = await api.tryIcloudLogin(path: pushService.statePath, conf: config!, account: account);
     }
     if (ret is api.LoginState_NeedsDevice2FA) {
@@ -607,6 +610,7 @@ class SetupViewController extends StatefulController {
 
   Future<api.LoginState> submitCode(String code) async {
     if (state is api.LoginState_Needs2FAVerification) {
+      await ValidationDataService.ensure(config!);
       var (dart, isAnnoying) = await api.verify2Fa(
         path: pushService.statePath,
         client: circleSession!,
@@ -623,6 +627,7 @@ class SetupViewController extends StatefulController {
       currentAppleUser = isAnnoying;
     } else if (state is api.LoginState_NeedsSMS2FAVerification) {
       var myState = state as api.LoginState_NeedsSMS2FAVerification;
+      await ValidationDataService.ensure(config!);
       var (dart, isAnnoying) = await api.verify2FaSms(
         path: pushService.statePath,
         accountMut: currentAppleAccount!,

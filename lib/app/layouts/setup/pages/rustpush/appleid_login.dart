@@ -9,6 +9,7 @@ import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/src/rust/api/api.dart' as api;
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/services/rustpush/rustpush_service.dart';
+import 'package:bluebubbles/services/rustpush/validation_data.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
 import 'package:flutter/material.dart';
@@ -563,6 +564,7 @@ class _AppleIdLoginState extends OptimizedState<AppleIdLogin> {
         creds: password == null ? null : (appleId, password),
       );
       controller.currentAppleAccount = account;
+      await ValidationDataService.ensure(controller.config!);
       controller.currentAppleUser = await api.tryIcloudLogin(path: pushService.statePath, conf: controller.config!, account: account);
 
       result = await controller.updateLoginState(result);

@@ -297,6 +297,27 @@ Future<JoinedOsConfig> configFromValidationData(
     RustLib.instance.api
         .crateApiApiConfigFromValidationData(data: data, extra: extra);
 
+/// The 250-byte hardware session material consumed by the NAC validation mint.
+/// Returns `None` for relay configs, which generate validation data server-side.
+Future<Uint8List?> getValidationSessionData({required JoinedOsConfig config}) =>
+    RustLib.instance.api.crateApiApiGetValidationSessionData(config: config);
+
+/// Install a validation stamp minted by the app for the next delegate login /
+/// IDS registration. The stamp is bound to the config's hardware session data.
+Future<void> setValidationData(
+        {required JoinedOsConfig config, required List<int> data}) =>
+    RustLib.instance.api
+        .crateApiApiSetValidationData(config: config, data: data);
+
+/// Step 1 of the validation exchange: Apple's `id-validation-cert` chain.
+Future<Uint8List> fetchValidationCert() =>
+    RustLib.instance.api.crateApiApiFetchValidationCert();
+
+/// Step 2 of the validation exchange: POST the mint's session-info-request and
+/// return Apple's `session-info` response.
+Future<Uint8List> initializeValidation({required List<int> request}) =>
+    RustLib.instance.api.crateApiApiInitializeValidation(request: request);
+
 Future<JoinedOsConfig> configFromRelay(
         {required String code, required String host, String? token}) =>
     RustLib.instance.api

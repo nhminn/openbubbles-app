@@ -993,16 +993,43 @@ pub fn generate_udid() -> String {
 }
 
 pub fn config_from_validation_data(data: Vec<u8>, extra: HwExtra) -> anyhow::Result<JoinedOSConfig> {
-    let inner = HardwareConfig::from_validation_data(&data)?;
-    Ok(JoinedOSConfig::MacOS(Arc::new(MacOSConfig {
-        inner,
-        version: extra.version,
-        protocol_version: extra.protocol_version,
-        device_id: extra.device_id,
-        icloud_ua: extra.icloud_ua,
-        aoskit_version: extra.aoskit_version,
-        udid: Some(generate_udid()),
-    })))
+    let _ = (data, extra);
+    // The public OpenAbsinthe crate is a stub, so the reverse hardware-config
+    // parser is unavailable. A raw 517-byte stamp cannot be turned back into a
+    // usable config in this build; use a Mac hardware code (OABS) instead.
+    Err(anyhow!(
+        "This build cannot import a raw validation-data stamp. Use a Mac hardware code (OABS) instead."
+    ))
+}
+
+/// The 250-byte hardware session material consumed by the NAC validation mint.
+/// Returns `None` for relay configs, which generate validation data server-side.
+pub fn get_validation_session_data(config: &JoinedOSConfig) -> anyhow::Result<Option<Vec<u8>>> {
+    match config {
+        JoinedOSConfig::MacOS(config) => Ok(Some(rustpush::macos::hardware_config_to_bin(&config.inner)?)),
+        JoinedOSConfig::Relay(_) => Ok(None),
+    }
+}
+
+/// Install a validation stamp minted by the app for the next delegate login /
+/// IDS registration. The stamp is bound to the config's hardware session data.
+pub fn set_validation_data(config: &JoinedOSConfig, data: Vec<u8>) -> anyhow::Result<()> {
+    if let JoinedOSConfig::MacOS(config) = config {
+        let session250 = rustpush::macos::hardware_config_to_bin(&config.inner)?;
+        rustpush::macos::set_validation_data(session250, data);
+    }
+    Ok(())
+}
+
+/// Step 1 of the validation exchange: Apple's `id-validation-cert` chain.
+pub async fn fetch_validation_cert() -> anyhow::Result<Vec<u8>> {
+    Ok(rustpush::macos::fetch_validation_cert().await?)
+}
+
+/// Step 2 of the validation exchange: POST the mint's session-info-request and
+/// return Apple's `session-info` response.
+pub async fn initialize_validation(request: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    Ok(rustpush::macos::initialize_validation(request).await?)
 }
 
 pub async fn config_from_relay(code: String, host: String, token: &Option<String>) -> anyhow::Result<JoinedOSConfig> {
@@ -2597,24 +2624,33 @@ pub async fn circle_setup_clique(client: &Arc<Mutex<Option<CircleClientSession<D
 }
 
 pub async fn verify_2fa(path: String, client: &mut CircleClientSession<DefaultAnisetteProvider>, anisette: &ArcAnisetteClient<DefaultAnisetteProvider>, os_config: &JoinedOSConfig, account: &Arc<Mutex<AppleAccount<DefaultAnisetteProvider>>>, watcher: &mut broadcast::Receiver<APSMessage>, idms: &Arc<IdmsAuthListener>, code: String) -> anyhow::Result<(LoginState, Option<IDSUser>)> {
-    client.send_code(&code).await?;
+    // If the circle already reached step 4, the code was verified on the first
+    // submit and only the post-login account setup failed. Retry that setup
+    // directly instead of sending the SRP proof again (which would fail with
+    // WrongStep(4)).
+    let already_verified = client.is_ready_for_login();
+    let mut login_state = if already_verified {
+        LoginState::LoggedIn
+    } else {
+        client.send_code(&code).await?;
 
-    // todo add timeout
-    let mut login_state = tokio::time::timeout(Duration::from_secs(30), async {
-        Ok::<_, PushError>(loop {
-            let msg = watcher.recv().await.unwrap();
-            if let Some(test) = idms.handle(msg)? {
-                match test {
-                    IdmsMessage::CircleRequest(c, _) => {
-                        if let Some(state) = client.handle_circle_request(&c).await? {
-                            break state;
-                        }
-                    },
-                    _ => { }
+        // todo add timeout
+        tokio::time::timeout(Duration::from_secs(30), async {
+            Ok::<_, PushError>(loop {
+                let msg = watcher.recv().await.unwrap();
+                if let Some(test) = idms.handle(msg)? {
+                    match test {
+                        IdmsMessage::CircleRequest(c, _) => {
+                            if let Some(state) = client.handle_circle_request(&c).await? {
+                                break state;
+                            }
+                        },
+                        _ => { }
+                    }
                 }
-            }
-        })
-    }).await.map_err(|_| anyhow!("Timed Out!"))??;
+            })
+        }).await.map_err(|_| anyhow!("Timed Out!"))??
+    };
 
     let mut user = None;
     let pet = account.lock().await.get_pet();
