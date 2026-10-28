@@ -1021,6 +1021,14 @@ class HwInpState extends OptimizedState<HwInp> {
         var data = await api.setupPush(config: controller.config!, identity: controller.identity!, statePath: pushService.statePath, state: controller.cachedState);
         controller.connection = data.$1;
         controller.anisette = await api.makeAnisette(path: pushService.statePath, config: controller.config!, conn: controller.connection!);
+        // Surface an activation/connection failure here with Apple's actual
+        // error, instead of the phone-number page panicking on a missing token.
+        try {
+          await api.getToken(state: controller.connection!);
+        } catch (_) {
+          controller.destroyConnection();
+          rethrow;
+        }
       }
 
       var state = await api.getDeviceInfo(config: controller.config!);

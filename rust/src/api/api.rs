@@ -2001,8 +2001,32 @@ pub async fn upload_attachment(sink: StreamSink<TransferProgress>, aps: &APSConn
     }).await
 }
 
-pub async fn get_token(state: &APSConnection) -> Vec<u8> {
-    state.get_token().await.to_vec()
+pub async fn get_token(state: &APSConnection) -> anyhow::Result<Vec<u8>> {
+    // A fresh APS connection activates in the background and the manager
+    // retries transient failures. Wait for the token instead of panicking on
+    // the first miss, which surfaced as "Token not found; re-enter device
+    // details if persistent" immediately after sign-in.
+    let wait_for_token = async {
+        loop {
+            if state.ensure_ready().await.is_ok() {
+                if let Ok(token) = state.get_token_checked().await {
+                    return token.to_vec();
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    };
+
+    match tokio::time::timeout(Duration::from_secs(30), wait_for_token).await {
+        Ok(token) => Ok(token),
+        Err(_) => match state.ensure_not_failed() {
+            Err(err) => Err(anyhow::Error::new(err)
+                .context("The push connection never produced a token")),
+            Ok(()) => Err(anyhow!(
+                "Timed out waiting for the push connection to produce a token"
+            )),
+        },
+    }
 }
 
 pub fn save_user(user: &IDSUser) -> anyhow::Result<String> {

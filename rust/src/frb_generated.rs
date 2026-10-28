@@ -7040,7 +7040,7 @@ fn wire__crate__api__api__get_token_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, ()>(
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
                         let mut api_state_guard = None;
                         let decode_indices_ =
@@ -7059,9 +7059,7 @@ fn wire__crate__api__api__get_token_impl(
                             }
                         }
                         let api_state_guard = api_state_guard.unwrap();
-                        let output_ok = Result::<_, ()>::Ok(
-                            crate::api::api::get_token(&*api_state_guard).await,
-                        )?;
+                        let output_ok = crate::api::api::get_token(&*api_state_guard).await?;
                         Ok(output_ok)
                     })()
                     .await,
