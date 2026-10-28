@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-${{ github.ref }}
@@ -53,6 +53,30 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule sync --recursive
           git submodule update --init --recursive
+
+      # Sign every CI build with the same key so the APK can be installed as
+      # an update. Without this the alpha flavor falls back to Gradle's
+      # per-runner debug key and every new build needs an uninstall first.
+      - name: Set up release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "No signing key configured; the alpha flavor will use the debug key."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/alpha-release.jks
+          cat > android/key.properties <<EOF
+          storeFile=alpha-release.jks
+          storePassword=${KEYSTORE_PASSWORD}
+          keyPassword=${KEY_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          EOF
+          echo "Configured a stable release signing key."
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -202,3 +226,19 @@ jobs:
           path: build/app/outputs/flutter-apk/app-alpha-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      # A rolling release gives a stable, login-free download link that can be
+      # opened directly on the phone:
+      #   https://github.com/nhminn/openbubbles-app/releases/latest/download/app-alpha-release.apk
+      - name: Publish rolling release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cp build/app/outputs/flutter-apk/app-alpha-release.apk app-alpha-release.apk
+          gh release view alpha-latest >/dev/null 2>&1 || \
+            gh release create alpha-latest \
+              --title "OpenBubbles Alpha (arm64)" \
+              --notes "Rolling CI build of the nhminn fork. Install over the previous build; no uninstall needed."
+          gh release upload alpha-latest app-alpha-release.apk --clobber
