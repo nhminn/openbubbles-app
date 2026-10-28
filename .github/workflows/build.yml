@@ -83,6 +83,11 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          # The rustpush branch is not the repository default, so opt in to
+          # writing the Gradle cache instead of restoring it read-only.
+          cache-read-only: false
 
       - name: Cache pub packages
         uses: actions/cache@v4
