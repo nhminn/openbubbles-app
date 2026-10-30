@@ -2,7 +2,7 @@
 
 use std::{borrow::{Borrow, BorrowMut}, collections::HashSet, fs::{self, File}, future::Future, io::{Cursor, Read, Write}, ops::Deref, panic, str::FromStr, sync::{Arc, OnceLock, Weak}, time::Duration, u64};
 pub use std::time::SystemTime;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use flutter_rust_bridge::{DartFnFuture, IntoDart, JoinHandle, frb};
 #[cfg(not(target_os = "android"))]
 use keystore::software::{SoftwareEncryptor, SoftwareKeystore};
@@ -2226,7 +2226,8 @@ pub async fn do_login(path: String, account: &Arc<Mutex<AppleAccount<DefaultAnis
     
     let conf_dir = PathBuf::from_str(&path).unwrap();
 
-    account.update_postdata("Apple Device", None, &["icloud", "imessage", "facetime"]).await?;
+    account.update_postdata("Apple Device", None, &["icloud", "imessage", "facetime"]).await
+        .context("Apple Account postdata (liveness) request failed")?;
     
     let Some(pet) = account.get_pet() else { return Err(anyhow!("No pet!")) };
     let Some(spd) = &account.spd else { return Err(anyhow!("No spd!")) };
