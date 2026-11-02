@@ -288,7 +288,11 @@ class SearchViewState extends OptimizedState<SearchView> {
                     padding: const EdgeInsets.only(left: 15, right: 15, top: 5),
                     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                       Flexible(
-                          child: CupertinoTextField(
+                          child: Ios27Glass(
+                        borderRadius: 22,
+                        blur: 18,
+                        padding: EdgeInsets.zero,
+                        child: CupertinoTextField(
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) {
                           search(textEditingController.text);
@@ -302,10 +306,7 @@ class SearchViewState extends OptimizedState<SearchView> {
                         placeholderStyle:
                             context.theme.textTheme.bodyLarge!.copyWith(color: context.theme.colorScheme.outline),
                         cursorColor: context.theme.colorScheme.primary,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: context.theme.colorScheme.primary),
-                        ),
+                        decoration: const BoxDecoration(color: Colors.transparent),
                         maxLines: 1,
                         prefix: Padding(
                           padding: const EdgeInsets.only(left: 15),
@@ -345,16 +346,16 @@ class SearchViewState extends OptimizedState<SearchView> {
                                 ),
                         ),
                         suffixMode: OverlayVisibilityMode.editing,
-                      )),
+                      ))),
                       Container(
                           margin: const EdgeInsets.only(left: 10),
-                          width: 35,
-                          height: 40,
-                          child: Stack(children: [
+                          width: 40,
+                          height: 44,
+                          child: Stack(clipBehavior: Clip.none, children: [
                             if (filterCount > 0)
                               Positioned(
                                 top: -4,
-                                right: 0,
+                                right: -2,
                                 child: Container(
                                   padding: const EdgeInsets.all(5),
                                   decoration: BoxDecoration(
@@ -368,28 +369,26 @@ class SearchViewState extends OptimizedState<SearchView> {
                                   ),
                                 ),
                               ),
-                            Container(
-                                margin: const EdgeInsets.only(left: 5),
-                                child: Padding(
-                                    padding: const EdgeInsets.only(top: 10),
-                                    child: InkWell(
-                                      onTap: () {
-                                        HapticFeedback.lightImpact();
-                                        if (focusNode.hasFocus) {
-                                          focusNode.unfocus();
-                                        }
+                            Ios27GlassButton(
+                              size: 40,
+                              tooltip: "Search filters",
+                              onTap: () {
+                                if (focusNode.hasFocus) {
+                                  focusNode.unfocus();
+                                }
 
-                                        if (panelController.isPanelOpen) {
-                                          panelController.close();
-                                        } else {
-                                          panelController.open();
-                                        }
-                                      },
-                                      child: Icon(
-                                        Icons.tune,
-                                        color: context.theme.colorScheme.primary,
-                                      ),
-                                    )))
+                                if (panelController.isPanelOpen) {
+                                  panelController.close();
+                                } else {
+                                  panelController.open();
+                                }
+                              },
+                              child: Icon(
+                                Icons.tune,
+                                color: context.theme.colorScheme.primary,
+                                size: 20,
+                              ),
+                            )
                           ]))
                     ]),
                   ),
@@ -570,17 +569,21 @@ class SearchViewState extends OptimizedState<SearchView> {
             backdropEnabled: true,
             backdropTapClosesPanel: true,
             backdropColor: context.theme.colorScheme.properSurface,
-            color: backgroundColor,
+            color: Colors.transparent,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(20),
-              topRight: Radius.circular(20),
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
             ),
             isDraggable: false,
             parallaxEnabled: true,
             minHeight: 0,
             maxHeight: 225,
             panelBuilder: () {
-              return Container(
+              return Ios27Glass(
+                borderRadius: 24,
+                blur: 24,
+                padding: EdgeInsets.zero,
+                child: Container(
                 padding: const EdgeInsets.only(left: 10, right: 10, bottom: 20, top: 20),
                 child: Column(children: [
                   Center(
@@ -802,6 +805,7 @@ class SearchViewState extends OptimizedState<SearchView> {
                             ],
                           ))),
                 ]),
+              ),
               );
             },
           )

@@ -63,58 +63,81 @@ class _ConversationListFABState extends CustomState<ConversationListFAB, void, C
 
   @override
   Widget build(BuildContext context) {
-    final widget = Obx(() => Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (ss.settings.cameraFAB.value && iOS && !kIsWeb && !kIsDesktop)
-          ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 45,
-              maxHeight: 45,
-            ),
-            child: FloatingActionButton(
-              child: Icon(
-                iOS ? CupertinoIcons.camera : Icons.photo_camera,
-                size: 20,
-                color: context.theme.colorScheme.onPrimaryContainer
-              ),
-              onPressed: () => controller.openCamera(context),
-              heroTag: null,
-              backgroundColor: context.theme.colorScheme.primaryContainer,
-            ),
-          ),
-        if (ss.settings.cameraFAB.value && iOS && !kIsWeb && !kIsDesktop)
-          const SizedBox(
-            height: 10,
-          ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (chats.chats.isEmpty && chats.loadedChatBatch.value)
-            Text("Start a Chat >", style: context.textTheme.labelLarge?.copyWith(color: Colors.white)),
-            if (chats.chats.isEmpty)
-            const SizedBox(width: 16),
-            InkWell(
-              onLongPress: iOS || !ss.settings.cameraFAB.value || kIsWeb || kIsDesktop
-                ? null : () => controller.openCamera(context),
-              child: CallbackShortcuts(
-                bindings: _newMessageShortcuts,
-                child: FloatingActionButton(
-                  focusNode: controller.newMessageFocusNode,
-                  backgroundColor: context.theme.colorScheme.primary,
-                  child: Icon(
-                    iOS ? CupertinoIcons.pencil : Icons.message,
-                    color: context.theme.colorScheme.onPrimary,
-                    size: 25
+    final widget = Obx(() {
+      final showCamera = ss.settings.cameraFAB.value && iOS && !kIsWeb && !kIsDesktop;
+      final accent = context.theme.colorScheme.primary;
+      final onAccent = context.theme.colorScheme.onPrimary;
+
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (chats.chats.isEmpty && chats.loadedChatBatch.value)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12, bottom: 16),
+                  child: Ios27GlassPill(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    child: Text(
+                      "Start a Chat",
+                      style: context.textTheme.labelLarge?.copyWith(color: Ios27.primaryText(context)),
+                    ),
                   ),
-                  onPressed: () => controller.openNewChatCreator(context)
                 ),
+              // A single merged glass surface holds both actions. The camera
+              // and compose buttons melt into one pill instead of rendering
+              // two separate floating circles.
+              Ios27GlassCluster(
+                axis: Axis.vertical,
+                spacing: 2,
+                padding: const EdgeInsets.all(5),
+                borderRadius: 36,
+                tint: accent.withOpacity(0.62),
+                children: [
+                  if (showCamera)
+                    Ios27ClusterButton(
+                      size: 44,
+                      tooltip: "Take a photo",
+                      color: onAccent,
+                      onTap: () => controller.openCamera(context),
+                      onLongPress: () => controller.openCamera(context),
+                      child: Icon(iOS ? CupertinoIcons.camera : Icons.photo_camera),
+                    ),
+                  if (showCamera)
+                    Container(
+                      width: 26,
+                      height: 0.7,
+                      color: onAccent.withOpacity(0.22),
+                    ),
+                  CallbackShortcuts(
+                    bindings: _newMessageShortcuts,
+                    child: Focus(
+                      focusNode: controller.newMessageFocusNode,
+                      child: Ios27ClusterButton(
+                        size: 54,
+                        tooltip: "New message",
+                        color: onAccent,
+                        onTap: () => controller.openNewChatCreator(context),
+                        // The camera button is part of this cluster when the
+                        // setting is on; iOS never used a long-press shortcut.
+                        onLongPress: null,
+                        child: Icon(
+                          iOS ? CupertinoIcons.pencil : Icons.message,
+                          size: 25,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        )
-      ],
-    ));
+            ],
+          ),
+        ],
+      );
+    });
 
     return ThemeSwitcher(
       iOSSkin: widget,
@@ -181,7 +204,6 @@ class _ConversationListFABState extends CustomState<ConversationListFAB, void, C
           ),
         ),
       ),
-      samsungSkin: widget,
     );
   }
 }

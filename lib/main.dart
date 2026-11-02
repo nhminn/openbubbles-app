@@ -22,6 +22,7 @@ import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_debounce/easy_debounce.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' show LiquidGlassWidgets;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -75,6 +76,18 @@ Future<Null> initApp(bool bubble, List<String> arguments) async {
       WidgetsFlutterBinding.ensureInitialized();
 
       await StartupTasks.initStartupServices(isBubble: bubble);
+
+      // Pre-warm Liquid Glass shaders once, in the UI isolate only. This keeps
+      // the first glass surface from flashing its fallback while the shader
+      // compiles. Failure is non-fatal: AdaptiveGlass falls back to a plain
+      // frosted surface.
+      if (!bubble) {
+        try {
+          await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
+        } catch (e, s) {
+          Logger.error("Failed to initialize Liquid Glass", error: e, trace: s);
+        }
+      }
 
       /* ----- RANDOM STUFF INITIALIZATION ----- */
       HttpOverrides.global = BadCertOverride();
