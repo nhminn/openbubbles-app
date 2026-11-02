@@ -38,8 +38,13 @@ class NativeSyncIsolateHandler : MethodCallHandlerImpl() {
         }
 
         if (engine != null) {
-            mainresult.success(null)
-            return
+            // The Dart side only starts a new sync after verifying that no sync
+            // port is registered, so an engine here is a leftover from an
+            // isolate that died without calling "exit". Reusing it would make
+            // the start a silent no-op.
+            Log.w(Constants.logTag, "Destroying a leftover sync engine")
+            engine?.destroy()
+            engine = null
         }
 
         FlutterMain.startInitialization(context)

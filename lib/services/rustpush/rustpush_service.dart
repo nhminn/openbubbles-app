@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'dart:math';
@@ -74,46 +75,119 @@ class SyncIsolate {
 Future<void> backgroundSyncIsolate() async {
   final receive = ReceivePort();
   ui.IsolateNameServer.registerPortWithName(receive.sendPort, "bg_sync");
-  List<SendPort> ports = [];
+  final List<SendPort> ports = [];
 
-  receive.listen((port) {
-    ports.add(port);
-  });
+  StreamSubscription? statusSub;
+  String? error;
+  var setupComplete = false;
 
-  await StartupTasks.initIsolateServices();
-
-  pushService.isSyncing.listen((value) {
-    notif.createSyncStatusNotification(value);
-
-    ports.retainWhere((port) {
+  void broadcast(String? status, {String? error}) {
+    int? lastSynced;
+    try {
+      lastSynced = ss.prefs.getInt("lastSynced");
+    } catch (_) {
+      // Settings may not be initialized if startup failed early.
+    }
+    final payload = <String, dynamic>{
+      "status": status,
+      "error": error,
+      "lastSynced": lastSynced,
+    };
+    ports.removeWhere((port) {
       try {
-        port.send(value);
-        return true;
-      } catch (e) {
-        Logger.error("failed to send status", error: e);
+        port.send(payload);
         return false;
+      } catch (_) {
+        return true;
       }
     });
-  });
-
-  chats.restoring = true;
-
-  await pushService.initFuture;
-  String? emsg;
-
-  try {
-    await pushService.doCloudKitSyncPrivate();
-  } catch (e) {
-    emsg = e.toString();
-    rethrow;
-  } finally {
-    pushService.isSyncing.value = null;
-    chats.restoring = false;
-    if (emsg != null) notif.createSyncFailed(emsg);
-    ui.IsolateNameServer.removePortNameMapping("bg_sync");
-    mcs.invokeMethod("exit");
   }
 
+  receive.listen((message) {
+    if (message is SendPort) {
+      if (!ports.contains(message)) ports.add(message);
+      // A restarted main isolate attaches after the sync has already started.
+      // Replay the current status instead of waiting for the next update.
+      try {
+        final status = pushService.isSyncing.value;
+        if (status != null) broadcast(status);
+      } catch (_) {
+        // Services may not be initialized yet.
+      }
+    }
+  });
+
+  try {
+    await StartupTasks.initIsolateServices();
+
+    statusSub = pushService.isSyncing.listen((value) {
+      broadcast(value);
+      try {
+        notif.createSyncStatusNotification(value).catchError((e) {
+          Logger.debug("Failed to update sync notification: $e");
+        });
+      } catch (e) {
+        // Notifications are best-effort in a background isolate.
+        Logger.debug("Failed to update sync notification: $e");
+      }
+    });
+
+    chats.restoring = true;
+    await pushService.initFuture;
+    setupComplete = true;
+    await pushService.doCloudKitSyncPrivate();
+  } catch (e, st) {
+    error = e.toString();
+    Logger.error("Background iCloud sync failed", error: e, trace: st);
+  } finally {
+    try {
+      await statusSub?.cancel();
+    } catch (_) {}
+    try {
+      pushService.isSyncing.value = null;
+    } catch (_) {}
+    try {
+      chats.restoring = false;
+    } catch (_) {}
+
+    try {
+      await notif.createSyncStatusNotification(null);
+    } catch (e) {
+      Logger.error("Failed to clear sync notification", error: e);
+    }
+    if (error != null) {
+      try {
+        await notif.createSyncFailed(error);
+      } catch (e) {
+        Logger.error("Failed to show sync failure notification", error: e);
+      }
+    }
+
+    // Always unregister the port, even if a cleanup step above failed. A
+    // leftover port makes the UI think a sync is still running.
+    try {
+      broadcast(null, error: error);
+    } catch (e) {
+      Logger.error("Failed to broadcast final sync status", error: e);
+    }
+    ui.IsolateNameServer.removePortNameMapping("bg_sync");
+    receive.close();
+
+    try {
+      // The native handler destroys the engine without completing this call,
+      // so do not await it: the isolate is about to be torn down.
+      mcs.invokeMethod("exit").catchError((e) {
+        Logger.debug("Sync isolate exit request failed: $e");
+      });
+    } catch (e) {
+      // The engine may already be gone; nothing else to clean up.
+      Logger.debug("Sync isolate exit request failed: $e");
+    }
+
+    if (!setupComplete) {
+      Logger.error("Background iCloud sync never finished starting: ${error ?? 'unknown error'}");
+    }
+  }
 }
 
 // utils for communicating between dart and rustpush.
@@ -2150,28 +2224,206 @@ class RustPushService extends GetxService {
 
   // forcibly stops a running sync operation.
   Future<void> resetCloudKitSync() async {
-    if (isSyncing.value == null) return;
+    // Invalidate any startup that is still waiting for the isolate port.
+    _syncAttempt++;
+
+    if (isSyncing.value == null &&
+        syncError.value == null &&
+        ui.IsolateNameServer.lookupPortByName("bg_sync") == null) {
+      return;
+    }
 
     if (kIsDesktop) {
-      exit(0);
-    } else {
+      if (isSyncing.value != null) exit(0);
+      isSyncing.value = null;
+      syncError.value = null;
+      chats.restoring = false;
+      return;
+    }
+
+    try {
       await mcs.invokeMethod("native-sync-isolate", {
         "close": true
       });
-      ui.IsolateNameServer.removePortNameMapping("bg_sync");
-      pushService.isSyncing.value = null;
-      chats.restoring = false;
+    } catch (e) {
+      Logger.warn("Failed to close the sync isolate: $e");
+    }
+    ui.IsolateNameServer.removePortNameMapping("bg_sync");
+    _closeSyncReceivePort();
+    pushService.isSyncing.value = null;
+    syncError.value = null;
+    chats.restoring = false;
+    _syncWatchdog?.cancel();
+    _syncWatchdog = null;
+    try {
+      // The isolate is destroyed before its cleanup can run, so remove the
+      // ongoing-sync notification here.
+      await notif.createSyncStatusNotification(null);
+    } catch (e) {
+      Logger.debug("Failed to clear sync notification: $e");
     }
   }
 
   Rxn<String> isSyncing = Rxn(null);
+  Rxn<String> syncError = Rxn(null);
+  Timer? _syncWatchdog;
+  DateTime? _lastSyncProgress;
+  ReceivePort? _syncReceivePort;
+  int _syncAttempt = 0;
+
+  void _closeSyncReceivePort([ReceivePort? port]) {
+    final current = _syncReceivePort;
+    if (port != null && !identical(port, current)) return;
+    _syncReceivePort = null;
+    try {
+      current?.close();
+    } catch (_) {}
+  }
+
+  /// Removes a sync-isolate registration left behind by a crashed engine.
+  Future<void> _cleanupStaleSyncIsolate({bool closeEngine = true}) async {
+    Logger.warn("Cleaning up a stale iCloud sync isolate");
+    // A pending startup must not report a second, misleading error after the
+    // isolate it was waiting for has been removed.
+    _syncAttempt++;
+    ui.IsolateNameServer.removePortNameMapping("bg_sync");
+    _closeSyncReceivePort();
+    pushService.isSyncing.value = null;
+    chats.restoring = false;
+    _syncWatchdog?.cancel();
+    _syncWatchdog = null;
+    if (closeEngine) {
+      try {
+        await mcs.invokeMethod("native-sync-isolate", {"close": true});
+      } catch (e) {
+        Logger.debug("Failed to close stale sync isolate: $e");
+      }
+    }
+    try {
+      await notif.createSyncStatusNotification(null);
+    } catch (e) {
+      Logger.debug("Failed to clear sync notification: $e");
+    }
+  }
+
+  /// Reports a sync failure in the UI and as a notification. The failure
+  /// notification is created here because a destroyed isolate cannot create it
+  /// itself.
+  Future<void> _failSync(String message) async {
+    syncError.value = message;
+    await _cleanupStaleSyncIsolate();
+    try {
+      await notif.createSyncFailed(message);
+    } catch (e) {
+      Logger.debug("Failed to show sync failure notification: $e");
+    }
+  }
+
+  /// Waits for the background sync isolate to register its port. The native
+  /// engine starts the isolate asynchronously, so a lookup immediately after
+  /// `native-sync-isolate` can race the registration.
+  Future<SendPort?> _waitForSyncPort(
+    Duration timeout, {
+    bool Function()? isCancelled,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (isCancelled?.call() ?? false) return null;
+      final port = ui.IsolateNameServer.lookupPortByName("bg_sync");
+      if (port != null) return port;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return null;
+  }
+
+  void _startSyncWatchdog() {
+    _syncWatchdog?.cancel();
+    _lastSyncProgress = DateTime.now();
+    _syncWatchdog = Timer.periodic(const Duration(seconds: 5), (timer) {
+      final port = ui.IsolateNameServer.lookupPortByName("bg_sync");
+      if (port == null) {
+        timer.cancel();
+        _syncWatchdog = null;
+        // The final status message is sent just before the port is removed, so
+        // give it a moment to arrive before declaring the isolate dead.
+        _syncWatchdog = Timer(const Duration(seconds: 2), () {
+          _syncWatchdog = null;
+          if (isSyncing.value != null) {
+            unawaited(_failSync("Sync stopped unexpectedly. Try again."));
+          }
+        });
+        return;
+      }
+
+      // The isolate always clears isSyncing before it removes its port. If the
+      // status is gone but the port remains, the isolate died during shutdown.
+      // Wait briefly so attaching to a freshly started isolate (which has not
+      // sent its first status yet) is not mistaken for a dead one.
+      if (isSyncing.value == null &&
+          syncError.value == null &&
+          DateTime.now().difference(_lastSyncProgress ?? DateTime.now()) >
+              const Duration(seconds: 30)) {
+        unawaited(_cleanupStaleSyncIsolate());
+        return;
+      }
+
+      // A sync that never gets past startup should not look like it is still
+      // working for fifteen minutes.
+      if (isSyncing.value == "Starting Sync..." &&
+          DateTime.now().difference(_lastSyncProgress ?? DateTime.now()) >
+              const Duration(minutes: 3)) {
+        unawaited(_failSync("Sync engine did not start. Try again."));
+        return;
+      }
+
+      // A sync that makes no progress for 15 minutes is treated as hung. This
+      // still allows large initial imports, which update the status per batch.
+      if (DateTime.now().difference(_lastSyncProgress ?? DateTime.now()) >
+          const Duration(minutes: 15)) {
+        unawaited(_failSync("Sync stalled. Tap Stop and try again."));
+      }
+    });
+  }
+
+  void _handleSyncMessage(dynamic data) {
+    _lastSyncProgress = DateTime.now();
+    if (data is Map) {
+      final status = data["status"] as String?;
+      final error = data["error"] as String?;
+      final lastSynced = data["lastSynced"];
+      if (lastSynced is int && lastSynced > 0) {
+        // The background isolate already persisted this. Update the cache
+        // before the UI reacts so the "Synced ..." label is current.
+        unawaited(ss.prefs.setInt("lastSynced", lastSynced));
+      }
+      isSyncing.value = status;
+      syncError.value = error;
+      if (status == null) {
+        unawaited(ss.prefs.reload()); // pick up the new last sync time
+        _closeSyncReceivePort();
+      }
+      return;
+    }
+
+    if (data == null) {
+      unawaited(ss.prefs.reload());
+      isSyncing.value = null;
+      _closeSyncReceivePort();
+      return;
+    }
+
+    isSyncing.value = data.toString();
+  }
+
   Future<void> doCloudKitSync() async {
     if (kIsDesktop) {
+      syncError.value = null;
       chats.restoring = true;
       try {
         await pushService.doCloudKitSyncPrivate();
       } catch (e) {
         Logger.error("CloudKit sync failed", error: e);
+        syncError.value = e.toString();
         showSnackbar("Sync Failed", e.toString());
       } finally {
         pushService.isSyncing.value = null;
@@ -2179,23 +2431,64 @@ class RustPushService extends GetxService {
       }
       return;
     }
-    var syncing = ui.IsolateNameServer.lookupPortByName("bg_sync");
-    if (syncing != null) {
+
+    if (isSyncing.value != null) {
       Logger.warn("Already syncing, not syncing again!");
       return;
     }
+
+    if (ui.IsolateNameServer.lookupPortByName("bg_sync") != null) {
+      // A previous isolate crashed before it could unregister its port. Clear
+      // it instead of refusing to sync forever.
+      await _cleanupStaleSyncIsolate();
+    }
+
+    syncError.value = null;
     isSyncing.value = "Starting Sync...";
-    await mcs.invokeMethod("native-sync-isolate");
-    
-    var port = ReceivePort();
-    port.listen((data) {
-      if (data == null) {
-        ss.prefs.reload(); // to get the new final sync time
-      }
-      isSyncing.value = data;
+    _closeSyncReceivePort();
+
+    final port = ReceivePort();
+    _syncReceivePort = port;
+    port.listen(_handleSyncMessage);
+
+    final attempt = ++_syncAttempt;
+    SendPort? syncPort;
+    // The isolate registers its port before initializing services, so attach as
+    // soon as it appears. That way a startup failure is delivered to us instead
+    // of being lost when the isolate exits.
+    final startFuture = mcs.invokeMethod("native-sync-isolate").catchError((e) {
+      Logger.warn("Sync isolate did not confirm startup: $e");
     });
-    syncing = ui.IsolateNameServer.lookupPortByName("bg_sync");
-    syncing!.send(port.sendPort);
+    syncPort = await _waitForSyncPort(
+      const Duration(seconds: 30),
+      isCancelled: () => attempt != _syncAttempt,
+    );
+    if (attempt != _syncAttempt) {
+      // Stop was pressed while the isolate was starting. The caller already
+      // reset the UI, so do not report a spurious startup failure.
+      _closeSyncReceivePort(port);
+      return;
+    }
+    if (syncPort != null) {
+      // Start the watchdog before sending: a closed SendPort accepts messages
+      // silently, so the watchdog is what detects an isolate that never starts
+      // reporting progress.
+      _startSyncWatchdog();
+      syncPort.send(port.sendPort);
+    }
+
+    // The native call resolves only after the isolate reports "ready", which can
+    // take a while on a cold start (database init). Do not block the caller or
+    // impose an arbitrary timeout here; the watchdog covers startup stalls.
+    unawaited(startFuture);
+
+    if (syncPort == null) {
+      _closeSyncReceivePort(port);
+      // Destroy any engine that was created but never registered its isolate,
+      // otherwise the next start would be a silent no-op.
+      await _cleanupStaleSyncIsolate();
+      syncError.value = "Sync engine did not start. Try again.";
+    }
   }
 
   String formatBytes(int bytes, [int decimals = 2]) {
@@ -2360,12 +2653,18 @@ class RustPushService extends GetxService {
   Future<void> _doCloudKitSyncPrivateOnce() async {
     isSyncing.value = "Syncing Now...";
 
-    var isInClique = await api.isInClique(keychain: pushService.state!.icloudServices!.keychain!);
+    final icloud = pushService.state?.icloudServices;
+    if (icloud?.keychain == null || icloud?.cloudMessagesClient == null) {
+      throw StateError(
+          "iCloud Messages is unavailable. Sign out and back in, then re-enable Messages in iCloud.");
+    }
+
+    var isInClique = await api.isInClique(keychain: icloud!.keychain!);
     if (!isInClique) {
-      Logger.warn("Skipping sync because we are no longer in the clique!");
-      ss.settings.cloudSyncingEnabled.value = false;
-      ss.saveSettings();
-      return;
+      // Do not silently turn the setting off: keep it enabled so the error is
+      // visible in Settings and the user can retry (or toggle it to re-join).
+      throw StateError(
+          "Not signed in to iCloud Keychain. Turn Messages in iCloud off and on again to sign in.");
     }
 
     if (ss.prefs.getStringList("messageDeletionIds-1")?.isNotEmpty ?? false) {
@@ -4819,11 +5118,16 @@ class RustPushService extends GetxService {
 
     var syncing = ui.IsolateNameServer.lookupPortByName("bg_sync");
     if (syncing != null) {
-      var port = ReceivePort();
-      port.listen((data) {
-        isSyncing.value = data;
-      });
+      // A port can survive a main-isolate restart, but it can also be left
+      // behind by a crashed isolate. Attach and let the isolate replay its
+      // current status; a dead isolate stays silent and the watchdog removes
+      // the stale registration after its grace period.
+      _closeSyncReceivePort();
+      final port = ReceivePort();
+      _syncReceivePort = port;
+      port.listen(_handleSyncMessage);
       syncing.send(port.sendPort);
+      _startSyncWatchdog();
     }
   }
 

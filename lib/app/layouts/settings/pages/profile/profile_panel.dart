@@ -475,7 +475,16 @@ class _ProfilePanelState extends OptimizedState<ProfilePanel> with WidgetsBindin
                             return;
                           }
                           if (val) {
-                            if (!await pushService.joinClique()) return;
+                            try {
+                              if (!await pushService.joinClique()) {
+                                showSnackbar("iCloud Keychain unavailable",
+                                    "Could not unlock your iCloud Keychain. Messages in iCloud was not enabled.");
+                                return;
+                              }
+                            } catch (e) {
+                              showSnackbar("iCloud Keychain error", e.toString());
+                              return;
+                            }
                             pushService.eraseCloudKitSync();
                           }
 
@@ -533,13 +542,31 @@ class _ProfilePanelState extends OptimizedState<ProfilePanel> with WidgetsBindin
                             ),
                           ),
                       ),
-                      if(ss.settings.cloudSyncingEnabled.value && pushService.isSyncing.value == null)
+                      if(ss.settings.cloudSyncingEnabled.value)
                       SettingsTile(
-                        title: "Sync Now",
+                        title: pushService.isSyncing.value == null ? "Sync Now" : "Stop Sync",
+                        subtitle: pushService.isSyncing.value != null
+                            ? "Syncing with iCloud. Tap to stop."
+                            : null,
                         onTap: () async {
-                          await pushService.doCloudKitSync();
+                          if (pushService.isSyncing.value != null) {
+                            await pushService.resetCloudKitSync();
+                          } else {
+                            await pushService.doCloudKitSync();
+                          }
                         },
                         trailing: const NextButton(),
+                      ),
+                      if (ss.settings.cloudSyncingEnabled.value && pushService.syncError.value != null)
+                      Container(
+                          padding: const EdgeInsets.only(bottom: 8.0, left: 15, top: 8.0, right: 15),
+                          child: Text(
+                            "Last sync failed: ${pushService.syncError.value}",
+                            style: context.theme.textTheme.bodySmall!.copyWith(
+                              color: context.theme.colorScheme.error,
+                              height: 1.5,
+                            ),
+                          ),
                       ),
                       if(ss.settings.cloudSyncingEnabled.value)
                       Container(
