@@ -13,6 +13,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.Icon
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -52,13 +54,19 @@ class FaceTimeActivity : Activity() {
     )
     var isCall = false
     var answered = false
+    private var joinRequested = false
     private var mirrorReady = false
     private var notificationId = 0
     var callUuid: String? = null
     private lateinit var cached: CachedWebview
 
     private lateinit var webView: WebView
-    private var initialMediaVolume: Int? = null;
+    private var initialMediaVolume: Int? = null
+
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var previousAudioMode: Int = AudioManager.MODE_NORMAL
+    private var previousSpeakerphone: Boolean = false
+    private var callAudioActive = false
 
     companion object {
         var activeFaceTimeActivity: FaceTimeActivity? = null
@@ -71,6 +79,19 @@ class FaceTimeActivity : Activity() {
 
     private fun hideControlsForPIP() {
         webView.loadUrl("javascript:if (document.querySelector(\".session-banner\").style.opacity == 1) { document.getElementById(\"canvas-layout-container\").click() }")
+    }
+
+    /**
+     * Clicks the web client's join button, retrying for a few seconds because
+     * the button can appear before the media session is ready.
+     */
+    private fun clickJoinButton() {
+        joinRequested = true
+        webView.loadUrl(
+            "javascript:(function(){var n=0;var t=setInterval(function(){" +
+                "var b=document.getElementById(\"callcontrols-join-button-session-banner\");" +
+                "if(b){b.click();clearInterval(t);}if(++n>40)clearInterval(t);},500);})()"
+        )
     }
 
     override fun onPictureInPictureModeChanged(
@@ -130,6 +151,91 @@ class FaceTimeActivity : Activity() {
 
     var contentObserver: ContentObserver? = null
 
+    private fun audioManager(): AudioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+
+    /**
+     * Returns true when audio is likely to play through a headset instead of the
+     * phone speaker. In that case the speaker should not be forced on.
+     */
+    private fun hasExternalAudioOutput(am: AudioManager): Boolean {
+        return try {
+            am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+                it.type == AudioManager.DEVICE_OUT_BLUETOOTH_SCO ||
+                    it.type == AudioManager.DEVICE_OUT_BLUETOOTH_A2DP ||
+                    it.type == AudioManager.DEVICE_OUT_BLE_HEADSET ||
+                    it.type == AudioManager.DEVICE_OUT_WIRED_HEADSET ||
+                    it.type == AudioManager.DEVICE_OUT_WIRED_HEADPHONE ||
+                    it.type == AudioManager.DEVICE_OUT_USB_HEADSET
+            }
+        } catch (e: Exception) {
+            Log.w("FaceTime", "Unable to inspect audio outputs", e)
+            false
+        }
+    }
+
+    /**
+     * Puts the device into a voice-call audio state. WebView's WebRTC stack
+     * requests audio focus itself, but on many Android builds it leaves the
+     * audio mode untouched, which makes call audio play over the media stream
+     * (quiet, and mixed with whatever else is playing). Doing it explicitly
+     * also gives us speakerphone routing for a video call.
+     */
+    private fun startCallAudio() {
+        if (callAudioActive) return
+        callAudioActive = true
+
+        val am = audioManager()
+        previousAudioMode = am.mode
+        previousSpeakerphone = am.isSpeakerphoneOn
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val attributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attributes)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener { }
+                    .build()
+                audioFocusRequest = request
+                am.requestAudioFocus(request)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_VOICE_CALL,
+                    AudioManager.AUDIOFOCUS_GAIN
+                )
+            }
+            am.mode = AudioManager.MODE_IN_COMMUNICATION
+            am.isSpeakerphoneOn = !hasExternalAudioOutput(am)
+        } catch (e: Exception) {
+            Log.w("FaceTime", "Unable to configure call audio", e)
+        }
+    }
+
+    private fun stopCallAudio() {
+        if (!callAudioActive) return
+        callAudioActive = false
+
+        val am = audioManager()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(null)
+            }
+            audioFocusRequest = null
+            am.isSpeakerphoneOn = previousSpeakerphone
+            am.mode = previousAudioMode
+        } catch (e: Exception) {
+            Log.w("FaceTime", "Unable to restore call audio", e)
+        }
+    }
+
     private fun handlePermissionRequests() {
         for (request in cached.deferredRequests) {
             handlePermissionRequest(request)
@@ -163,8 +269,10 @@ class FaceTimeActivity : Activity() {
     }
 
     private fun answerCall() {
+        if (answered) return
         answered = true
 
+        startCallAudio()
         handlePermissionRequests()
 
         if (notificationId != 0) {
@@ -177,19 +285,46 @@ class FaceTimeActivity : Activity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 window.setBackgroundBlurRadius(0)
             }
-            webView.loadUrl("javascript:document.getElementById(\"callcontrols-join-button-session-banner\").click()")
+            clickJoinButton()
         } else {
             connecting()
         }
-    }
-
-    override fun onNewIntent(intent: Intent?) {
+    }    override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
 
     }
 
+    /**
+     * Back should minimize an active call into Picture-in-Picture instead of
+     * hanging it up, matching the system dialer and FaceTime on iOS.
+     */
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // Only minimize once the call has actually been answered or joined.
+        // `serviceStarted` is also set while merely warming up an outgoing
+        // call, so it must not be the only check.
+        if (answered || joinRequested) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && enterPictureInPictureMode()) {
+                return
+            }
+            moveTaskToBack(true)
+            return
+        }
+        super.onBackPressed()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val callExtras = intent?.extras
+        if (callExtras == null || callExtras.getString("link") == null) {
+            // The in-call notification can recreate this activity after the task
+            // was removed. Without call data there is nothing to show.
+            Log.w("FaceTime", "Started without call data, finishing")
+            finish()
+            return
+        }
+
         binding = ActivityFaceTimeBinding.inflate(layoutInflater)
 
         activeFaceTimeActivity = this
@@ -211,7 +346,7 @@ class FaceTimeActivity : Activity() {
             )
         }
 
-        handleConfig(intent.extras!!)
+        handleConfig(callExtras)
         binding.mainFrame.addView(webView)
 
         binding.accept.setOnClickListener {
@@ -272,9 +407,20 @@ class FaceTimeActivity : Activity() {
     fun startService() {
         if (serviceStarted) return
 
+        startCallAudio()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val intent = Intent(this, FaceTimeInCallService::class.java)
-            startForegroundService(intent)
+            // Hand the original call intent to the service so its notification
+            // can bring this exact call back to the foreground.
+            this.intent?.extras?.let { intent.putExtra("launch_extras", Bundle(it)) }
+            try {
+                startForegroundService(intent)
+            } catch (e: Exception) {
+                Log.e("FaceTime", "Unable to start the in-call service", e)
+                serviceStarted = false
+                return
+            }
         }
         serviceStarted = true
     }
@@ -291,8 +437,9 @@ class FaceTimeActivity : Activity() {
     }
 
     override fun onDestroy() {
-        webView.destroy()
-        activeFaceTimeActivity = null
+        stopCallAudio()
+        if (::webView.isInitialized) webView.destroy()
+        if (activeFaceTimeActivity === this) activeFaceTimeActivity = null
 
         val intent = Intent(this, FaceTimeInCallService::class.java)
         stopService(intent)
@@ -346,6 +493,9 @@ class FaceTimeActivity : Activity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 window.setBackgroundBlurRadius(0)
             }
+            // If the mirror signal never arrived, still try to join; the web
+            // client may already be ready.
+            if (!mirrorReady) clickJoinButton()
         }, 15000)
     }
 
@@ -374,7 +524,7 @@ class FaceTimeActivity : Activity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     window.setBackgroundBlurRadius(0)
                 }
-                webView.loadUrl("javascript:document.getElementById(\"callcontrols-join-button-session-banner\").click()")
+                clickJoinButton()
             }
         }
 
@@ -416,6 +566,7 @@ class FaceTimeActivity : Activity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 window.setBackgroundBlurRadius(0)
             }
+            startCallAudio()
             handlePermissionRequests()
         }
     }

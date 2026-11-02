@@ -3,6 +3,7 @@ package com.bluebubbles.messaging.services.facetime
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -30,11 +31,28 @@ class FaceTimeInCallService: Service() {
 
     val IN_CALL_CHANNEL = "com.bluebubbles.in_call_channel";
     @RequiresApi(Build.VERSION_CODES.O)
-    fun notifyForeground() {
+    fun notifyForeground(serviceIntent: Intent?) {
         createNotificationChannel()
+
+        val launchIntent = Intent(this, FaceTimeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        serviceIntent?.getBundleExtra("launch_extras")?.let { launchIntent.putExtras(it) }
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            90210,
+            launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val notification: Notification = Notification.Builder(this, IN_CALL_CHANNEL)
             .setContentTitle("FaceTime call in progress")
+            .setContentText("Tap to return to the call")
+            .setContentIntent(contentIntent)
             .setSmallIcon(R.mipmap.ic_stat_icon)
+            .setCategory(Notification.CATEGORY_CALL)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setShowWhen(true)
             .build()
 
         var type: Int = 0
@@ -47,15 +65,39 @@ class FaceTimeInCallService: Service() {
             }
         }
 
-        // Notification ID cannot be 0.
-        startForeground(3884786, notification, type)
+        try {
+            // Notification ID cannot be 0.
+            startForeground(3884786, notification, type)
+        } catch (e: Exception) {
+            Log.e("FaceTime", "Unable to enter the foreground call state", e)
+            // Stop before the system's five-second startForeground deadline.
+            stopSelf()
+        }
     }
 
     override fun onCreate() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notifyForeground()
+            createNotificationChannel()
         }
         super.onCreate()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notifyForeground(intent)
+        }
+        // Never restart an empty call service after the process is killed.
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        super.onDestroy()
     }
 
 
