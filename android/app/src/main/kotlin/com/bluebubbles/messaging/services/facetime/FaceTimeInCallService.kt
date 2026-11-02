@@ -66,8 +66,14 @@ class FaceTimeInCallService: Service() {
         }
 
         try {
-            // Notification ID cannot be 0.
-            startForeground(3884786, notification, type)
+            // Notification ID cannot be 0. The foreground-service-type overload
+            // only exists on Android 10+, so keep the two-arg call for older
+            // releases.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(3884786, notification, type)
+            } else {
+                startForeground(3884786, notification)
+            }
         } catch (e: Exception) {
             Log.e("FaceTime", "Unable to enter the foreground call state", e)
             // Stop before the system's five-second startForeground deadline.
