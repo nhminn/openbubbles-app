@@ -691,11 +691,14 @@ class SetupViewController extends StatefulController {
   Future<api.IdsUser?> _retryIcloudLogin(api.JoinedOsConfig conf) async {
     final ready = await ValidationDataService.ensure(conf, forceRefresh: true);
     if (!ready) {
+      final reason = ValidationDataService.lastError;
       // Make the reason visible: without it the UI only ever showed the HTTP
       // status, which cannot distinguish a failed mint from a stale stamp.
       throw AnyhowException(
-        "Apple rejected the sign-in and a new device validation stamp could not be prepared"
-        "${ValidationDataService.lastError == null ? '' : ': ${ValidationDataService.lastError}'}",
+        reason != null && reason.contains('hosted')
+            ? "Apple rejected the sign-in and this hosted device could not obtain validation data from its server"
+            : "Apple rejected the sign-in and a new device validation stamp could not be prepared"
+                "${reason == null ? '' : ': $reason'}",
       );
     }
     return api.tryIcloudLogin(path: pushService.statePath, conf: conf, account: currentAppleAccount!);
