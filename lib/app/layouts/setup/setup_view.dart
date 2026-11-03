@@ -690,15 +690,16 @@ class SetupViewController extends StatefulController {
 
   Future<api.IdsUser?> _retryIcloudLogin(api.JoinedOsConfig conf) async {
     final ready = await ValidationDataService.ensure(conf, forceRefresh: true);
-    if (!ready) {
+    // A hosted config has no local session material; its relay mints a fresh
+    // stamp on each login attempt, so retry the login instead of treating the
+    // absent local stamp as a failure.
+    if (!ready && !ValidationDataService.lastWasHosted) {
       final reason = ValidationDataService.lastError;
       // Make the reason visible: without it the UI only ever showed the HTTP
       // status, which cannot distinguish a failed mint from a stale stamp.
       throw AnyhowException(
-        reason != null && reason.contains('hosted')
-            ? "Apple rejected the sign-in and this hosted device could not obtain validation data from its server"
-            : "Apple rejected the sign-in and a new device validation stamp could not be prepared"
-                "${reason == null ? '' : ': $reason'}",
+        "Apple rejected the sign-in and a new device validation stamp could not be prepared"
+        "${reason == null ? '' : ': $reason'}",
       );
     }
     return api.tryIcloudLogin(path: pushService.statePath, conf: conf, account: currentAppleAccount!);

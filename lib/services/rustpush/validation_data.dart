@@ -23,6 +23,10 @@ class ValidationDataService {
   /// Sign-in errors include this so a rejected delegate login explains itself.
   static String? lastError;
 
+  /// True when the most recent [ensure] call had no local session material
+  /// because the config is hosted and the relay mints its stamp server-side.
+  static bool lastWasHosted = false;
+
   /// Serializes mints. The Kotlin bridge keeps the establish seed between
   /// `createRequest` and `finish`, so two concurrent mints would overwrite each
   /// other's seed and both stamps would be rejected.
@@ -50,11 +54,13 @@ class ValidationDataService {
 
   static Future<bool> _ensure(api.JoinedOsConfig config, {required bool forceRefresh}) async {
     lastError = null;
+    lastWasHosted = false;
 
     final session = await api.getValidationSessionData(config: config);
     if (session == null) {
       // Relay/hosted configs mint their stamp server-side.
       lastError = 'this account is hosted; validation is prepared by the server';
+      lastWasHosted = true;
       return false;
     }
 
