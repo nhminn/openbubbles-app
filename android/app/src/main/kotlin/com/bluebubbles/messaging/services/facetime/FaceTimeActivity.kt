@@ -14,6 +14,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
@@ -160,12 +161,12 @@ class FaceTimeActivity : Activity() {
     private fun hasExternalAudioOutput(am: AudioManager): Boolean {
         return try {
             am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
-                it.type == AudioManager.DEVICE_OUT_BLUETOOTH_SCO ||
-                    it.type == AudioManager.DEVICE_OUT_BLUETOOTH_A2DP ||
-                    it.type == AudioManager.DEVICE_OUT_BLE_HEADSET ||
-                    it.type == AudioManager.DEVICE_OUT_WIRED_HEADSET ||
-                    it.type == AudioManager.DEVICE_OUT_WIRED_HEADPHONE ||
-                    it.type == AudioManager.DEVICE_OUT_USB_HEADSET
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
             }
         } catch (e: Exception) {
             Log.w("FaceTime", "Unable to inspect audio outputs", e)
@@ -304,7 +305,8 @@ class FaceTimeActivity : Activity() {
         // `serviceStarted` is also set while merely warming up an outgoing
         // call, so it must not be the only check.
         if (answered || joinRequested) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && enterPictureInPictureMode()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                enterPictureInPictureMode(PictureInPictureParams.Builder().build())) {
                 return
             }
             moveTaskToBack(true)
