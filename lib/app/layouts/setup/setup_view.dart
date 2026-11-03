@@ -302,7 +302,7 @@ class SetupViewController extends StatefulController {
       currentAppleAccount?.dispose();
       currentAppleAccount = account;
       await ValidationDataService.ensure(config!);
-      currentAppleUser = await api.tryIcloudLogin(path: pushService.statePath, conf: config!, account: account);
+      currentAppleUser = await tryIcloudLoginWithRetry(config!);
     }
     if (ret is api.LoginState_NeedsDevice2FA) {
       // subscribe now to not miss the 2fa message
@@ -611,36 +611,94 @@ class SetupViewController extends StatefulController {
   Future<api.LoginState> submitCode(String code) async {
     if (state is api.LoginState_Needs2FAVerification) {
       await ValidationDataService.ensure(config!);
-      var (dart, isAnnoying) = await api.verify2Fa(
-        path: pushService.statePath,
-        client: circleSession!,
-        anisette: anisette!, 
-        osConfig: config!,
-        watcher: connReceiver!,
-        idms: connListener!,
+      var (dart, isAnnoying) = await _verifyWithFreshStamp(
+        () => api.verify2Fa(
+          path: pushService.statePath,
+          client: circleSession!,
+          anisette: anisette!, 
+          osConfig: config!,
+          watcher: connReceiver!,
+          idms: connListener!,
 
 
-        account: currentAppleAccount!,
-        code: code
+          account: currentAppleAccount!,
+          code: code
+        ),
+        config!,
       );
       state = dart;
       currentAppleUser = isAnnoying;
     } else if (state is api.LoginState_NeedsSMS2FAVerification) {
       var myState = state as api.LoginState_NeedsSMS2FAVerification;
       await ValidationDataService.ensure(config!);
-      var (dart, isAnnoying) = await api.verify2FaSms(
-        path: pushService.statePath,
-        accountMut: currentAppleAccount!,
-        anisette: anisette!, 
-        config: config!, 
+      var (dart, isAnnoying) = await _verifyWithFreshStamp(
+        () => api.verify2FaSms(
+          path: pushService.statePath,
+          accountMut: currentAppleAccount!,
+          anisette: anisette!, 
+          config: config!, 
 
-        body: myState.field0, 
-        code: code
+          body: myState.field0, 
+          code: code
+        ),
+        config!,
       );
       state = dart;
       currentAppleUser = isAnnoying;
     }
     return await updateLoginState(state);
+  }
+
+  /// Apple rejects the delegate login with an empty HTTP 400 when the hardware
+  /// validation stamp is missing or no longer accepted. By then the 2FA code
+  /// has already been verified, so mint a fresh stamp and retry only the
+  /// account/IDS setup instead of consuming another code.
+  static bool _isDelegateValidationFailure(Object error) {
+    final message = error is AnyhowException ? error.message : error.toString();
+    if (!message.contains("delegate login")) return false;
+    return message.contains("HTTP 400") ||
+        message.contains("HTTP 401") ||
+        message.contains("0 response bytes");
+  }
+
+  Future<(api.LoginState, api.IdsUser?)> _verifyWithFreshStamp(
+    Future<(api.LoginState, api.IdsUser?)> Function() verify,
+    api.JoinedOsConfig conf,
+  ) async {
+    try {
+      return await verify();
+    } catch (e) {
+      if (!_isDelegateValidationFailure(e) || currentAppleAccount == null) rethrow;
+      Logger.warn("Post-2FA login failed, retrying with a fresh validation stamp");
+      final user = await _retryIcloudLogin(conf);
+      if (user == null) rethrow;
+      return (const api.LoginState.loggedIn(), user);
+    }
+  }
+
+  /// Runs the iCloud/IDS setup that follows the delegate login, re-minting the
+  /// validation stamp once if Apple rejected the first attempt.
+  Future<api.IdsUser?> tryIcloudLoginWithRetry(api.JoinedOsConfig conf) async {
+    try {
+      return await api.tryIcloudLogin(path: pushService.statePath, conf: conf, account: currentAppleAccount!);
+    } catch (e) {
+      if (!_isDelegateValidationFailure(e)) rethrow;
+      Logger.warn("iCloud login failed, retrying with a fresh validation stamp");
+      return _retryIcloudLogin(conf);
+    }
+  }
+
+  Future<api.IdsUser?> _retryIcloudLogin(api.JoinedOsConfig conf) async {
+    final ready = await ValidationDataService.ensure(conf, forceRefresh: true);
+    if (!ready) {
+      // Make the reason visible: without it the UI only ever showed the HTTP
+      // status, which cannot distinguish a failed mint from a stale stamp.
+      throw AnyhowException(
+        "Apple rejected the sign-in and a new device validation stamp could not be prepared"
+        "${ValidationDataService.lastError == null ? '' : ': ${ValidationDataService.lastError}'}",
+      );
+    }
+    return api.tryIcloudLogin(path: pushService.statePath, conf: conf, account: currentAppleAccount!);
   }
 
   (String, String)? twoFaCreds;

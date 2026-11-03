@@ -565,7 +565,7 @@ class _AppleIdLoginState extends OptimizedState<AppleIdLogin> {
       );
       controller.currentAppleAccount = account;
       await ValidationDataService.ensure(controller.config!);
-      controller.currentAppleUser = await api.tryIcloudLogin(path: pushService.statePath, conf: controller.config!, account: account);
+      controller.currentAppleUser = await controller.tryIcloudLoginWithRetry(controller.config!);
 
       result = await controller.updateLoginState(result);
 
